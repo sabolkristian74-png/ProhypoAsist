@@ -1,0 +1,29 @@
+[
+  {
+    "sekcia": "Posielanie výpovedí",
+    "otazka": "Posiela sa výpoveď poštou alebo e-mailom?",
+    "odpoved": "Použi aktuálny interný zoznam kontaktov poisťovní. Pred odoslaním vždy skontroluj, či poisťovňa vyžaduje špecifický predmet správy alebo formát príloh."
+  },
+  {
+    "sekcia": "Posielanie výpovedí",
+    "otazka": "Aká poisťovňa má aký e-mail pre zaslanie výpovede?", 
+    "odpoved": "Závisí od poisťovne a typu zmluvy. Niektoré poisťovne akceptujú e-mail, iné vyžadujú listinnú formu alebo elektronický podpis. Pri nejasnosti zvoľ bezpečnejší postup podľa interného checklistu."
+  },
+  {
+    "sekcia": "Leasing FO/PO",
+    "otazka": "Aké základné údaje potrebujeme pre leasing FO?",
+    "otazka2": "Aké základné údaje potrebujeme pre leasing PO?",
+    "odpoved": "Typicky: meno a priezvisko, rodné číslo/dátum narodenia, adresa trvalého pobytu, kontakt, doklad totožnosti, výška príjmu a informácia o zamestnaní."
+  },
+  {
+    "sekcia": "Leasing FO/PO",
+    "otazka": "Aké základné údaje potrebujeme pre leasing PO?",
+    "odpoved": "Typicky: meno a priezvisko, rodné číslo/dátum narodenia, adresa trvalého pobytu, kontakt, doklad totožnosti, výška príjmu a informácia o zamestnaní."
+  },
+  
+  {
+    "sekcia": "Leasing FO/PO",
+    "otazka": "Na aké maily posielať ponuky?",
+    "odpoved": "Tatra Leasing - (mail)\nVÚB Leasing - (mail)\nCofidis Leasing - (mail)\nUniCredit Leasing - (mail)\nBKS leasing - (mail)"
+  }
+]
