@@ -37,3 +37,16 @@ Poznamka
 
 - Subor `run.sh` uz nepouziva cesty viazane na Codespaces/GitHub.
 - Ak nepouzivate virtualne prostredie, skript skusi `python3` alebo `python` automaticky.
+
+Deploy na Render
+
+1. Otvor Render dashboard a vyber `New +` -> `Blueprint`.
+2. Pripoj GitHub repozitar `sabolkristian74-png/ProhypoAsist`.
+3. Render nacita konfiguraciu zo suboru `render.yaml`.
+4. Spusti deploy.
+5. Po dokonceni dostanes verejny link aplikacie.
+
+Poznamka k 24/7
+
+- Free plan na Renderi moze uspavat aplikaciu pri necinnosti.
+- Ak chces stabilne 24/7 bez uspavania, zvol plateny plan (napr. `Starter`) alebo VPS.
