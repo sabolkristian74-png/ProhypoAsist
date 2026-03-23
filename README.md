@@ -50,3 +50,8 @@ Poznamka k 24/7
 
 - Free plan na Renderi moze uspavat aplikaciu pri necinnosti.
 - Ak chces stabilne 24/7 bez uspavania, zvol plateny plan (napr. `Starter`) alebo VPS.
+
+Troubleshooting Render
+
+- Ak log pise `No open HTTP ports detected on 0.0.0.0`, spusti `Manual sync`.
+- Tento repozitar uz ma upraveny `startCommand` v `render.yaml` pre spolahlivejsi start.
