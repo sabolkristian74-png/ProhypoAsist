@@ -133,7 +133,7 @@ def build_email_text(oslovenie, meno, typ, poistovna, zmluva, vyrocie_pz):
     )
 
 
-def build_backoffice_email_text(meno_klienta, cislo_zmluvy, typ_zmluvy, vinkulacia, slsp, prioritne, datum_spracovania, zaznam, pca, ine, poznamky):
+def build_backoffice_email_text(meno_klienta, cislo_zmluvy, typ_zmluvy, vinkulacia, slsp, prioritne, datum_spracovania, zaznam, pca, delenie_provizie, ine, poznamky):
     meno_klienta = str(meno_klienta).strip()
     cislo_zmluvy = str(cislo_zmluvy).strip()
     typ_zmluvy = str(typ_zmluvy).strip()
@@ -143,6 +143,7 @@ def build_backoffice_email_text(meno_klienta, cislo_zmluvy, typ_zmluvy, vinkulac
     datum_spracovania = str(datum_spracovania).strip()
     zaznam = str(zaznam).strip()
     pca = str(pca).strip()
+    delenie_provizie = str(delenie_provizie).strip()
     ine = str(ine).strip()
     poznamky = str(poznamky).strip()
 
@@ -152,7 +153,7 @@ def build_backoffice_email_text(meno_klienta, cislo_zmluvy, typ_zmluvy, vinkulac
     priority_text = "PRIORITNÉ!\n\n" if prioritne.lower() == "áno" else ""
     datum_text = f"Dátum spracovania – banka: {datum_spracovania}\n" if datum_spracovania else ""
 
-    return f"""{priority_text}Ahojte,\n\nposielam informácie k nahratiu a spracovaniu zmluvy\nKlient: {meno_klienta}\nČíslo zmluvy: {cislo_zmluvy}\nTyp zmluvy: {typ_zmluvy}\nVinkulácia: {vinkulacia}\nSLSP: {slsp}\n{datum_text}Záznam: {zaznam}\nPCA: {pca}\nIné: {ine}\nPoznámky (čo konkrétne treba a netreba urobiť): {poznamky}\nZa spracovanie ďakujem."""
+    return f"""{priority_text}Ahojte,\n\nposielam informácie k nahratiu a spracovaniu zmluvy\nKlient: {meno_klienta}\nČíslo zmluvy: {cislo_zmluvy}\nTyp zmluvy: {typ_zmluvy}\nVinkulácia: {vinkulacia}\nSLSP: {slsp}\n{datum_text}Záznam: {zaznam}\nPCA: {pca}\nDelenie provízie: {delenie_provizie}\nIné: {ine}\nPoznámky (čo konkrétne treba a netreba urobiť): {poznamky}\nZa spracovanie ďakujem."""
 
 
 def load_faq_items():
@@ -425,6 +426,7 @@ def backoffice():
             "datum_spracovania": request.form.get("datum_spracovania", ""),
             "zaznam": yes_no(request.form.get("zaznam") == "on"),
             "pca": yes_no(request.form.get("pca") == "on"),
+            "delenie_provizie": request.form.get("delenie_provizie", "Žiadne delenie"),
             "ine": request.form.get("ine", ""),
             "poznamky": request.form.get("poznamky", ""),
         }
@@ -447,6 +449,7 @@ def backoffice():
         'datum_spracovania': request.form.get('datum_spracovania', ''),
         'zaznam': 'checked' if request.form.get('zaznam') else '',
         'pca': 'checked' if request.form.get('pca') else '',
+        'delenie_provizie': request.form.get('delenie_provizie', 'Žiadne delenie'),
         'ine': request.form.get('ine', ''),
         'poznamky': request.form.get('poznamky', ''),
     }
@@ -470,6 +473,16 @@ def backoffice():
     content += f"Dátum spracovania - banka:<input name='datum_spracovania' value='{form_data['datum_spracovania']}'>"
     content += f"Záznam:<label><input type='checkbox' name='zaznam' {form_data['zaznam']}></label>"
     content += f"PCA:<label><input type='checkbox' name='pca' {form_data['pca']}></label>"
+    content += "Delenie provízie:<select name='delenie_provizie'>"
+    content += f"<option value='Žiadne delenie' {'selected' if form_data['delenie_provizie']=='Žiadne delenie' else ''}>Žiadne delenie</option>"
+    content += f"<option value='Bruno' {'selected' if form_data['delenie_provizie']=='Bruno' else ''}>Bruno</option>"
+    content += f"<option value='Kriška' {'selected' if form_data['delenie_provizie']=='Kriška' else ''}>Kriška</option>"
+    content += f"<option value='Kšenzo' {'selected' if form_data['delenie_provizie']=='Kšenzo' else ''}>Kšenzo</option>"
+    content += f"<option value='Fio' {'selected' if form_data['delenie_provizie']=='Fio' else ''}>Fio</option>"
+    content += f"<option value='Miško' {'selected' if form_data['delenie_provizie']=='Miško' else ''}>Miško</option>"
+    content += f"<option value='Naty' {'selected' if form_data['delenie_provizie']=='Naty' else ''}>Naty</option>"
+    content += f"<option value='Finax' {'selected' if form_data['delenie_provizie']=='Finax' else ''}>Finax</option>"
+    content += "</select>"
     content += f"Iné:<input name='ine' value='{form_data['ine']}'>"
     content += f"Poznámky:<textarea name='poznamky'>{form_data['poznamky']}</textarea>"
     content += "<button class='btn' type='submit'>Vygenerovať</button>"
