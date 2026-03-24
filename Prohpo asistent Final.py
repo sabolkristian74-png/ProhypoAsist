@@ -39,6 +39,20 @@ APP_TEMPLATE = """<!doctype html>
         .catch((err) => alert('Kopírovanie zlyhalo: ' + err));
     }
 
+    function openEmailInOutlook(elementId, recipientEmail, customSubject) {
+      const element = document.getElementById(elementId);
+      const emailBody = element.textContent || element.innerText;
+      if (!recipientEmail || recipientEmail.trim() === '') {
+        alert('Zadajte emailovú adresu príjemcu!');
+        return;
+      }
+      const subject = customSubject || 'Správa od ProHypo Asistenta';
+      const mailtoLink = 'mailto:' + encodeURIComponent(recipientEmail) + 
+                         '?subject=' + encodeURIComponent(subject) + 
+                         '&body=' + encodeURIComponent(emailBody);
+      window.location.href = mailtoLink;
+    }
+
     function updateVystupnyMailFields() {
       const select = document.querySelector("select[name='typ_mailu']");
       if (!select) return;
@@ -228,8 +242,13 @@ def vypocetny_email():
             flash(str(e))
 
     result_block = ""
+    email_priemcu = request.form.get('email_priemcu', '')
     if result:
-        result_block = f"<div class='result'><button class='btn copy-btn' type='button' onclick=\"copyToClipboard('emailResult')\">Kopírovať email</button><pre id='emailResult'>{result}</pre></div>"
+        result_block = f"""<div class='result'>
+        <button class='btn copy-btn' type='button' onclick="copyToClipboard('emailResult')">Kopírovať email</button>
+        <button class='btn copy-btn' type='button' onclick="openEmailInOutlook('emailResult', '{email_priemcu}')">Otvoriť v Outlooku</button>
+        <pre id='emailResult'>{result}</pre>
+        </div>"""
 
     prazdne_data = {
         'meno': request.form.get('meno', ''),
@@ -244,6 +263,7 @@ def vypocetny_email():
     content += "<form method='post'>"
     content += "Oslovenie:<select name='oslovenie'><option value='pán'>pán</option><option value='pani'>pani</option></select>"
     content += f"Meno:<input name='meno' value='{prazdne_data['meno']}' required>"
+    content += f"Email príjemcu:<input name='email_priemcu' type='email' value='{request.form.get('email_priemcu', '')}'>"
     content += "Typ nehnuteľnosti:<select name='typ' required>"
     content += f"<option value='byt' {'selected' if prazdne_data['typ'].lower()=='byt' else ''}>Byt</option>"
     content += f"<option value='dom' {'selected' if prazdne_data['typ'].lower()=='dom' else ''}>Dom</option>"
@@ -343,8 +363,13 @@ def vystupny_mail():
                     )
 
     result_block = ""
+    email_priemcu = request.form.get('email_priemcu', '')
     if result:
-        result_block = f"<div class='result'><button class='btn copy-btn' type='button' onclick=\"copyToClipboard('vystupnyResult')\">Kopírovať mail</button><pre id='vystupnyResult'>{result}</pre></div>"
+        result_block = f"""<div class='result'>
+        <button class='btn copy-btn' type='button' onclick=\"copyToClipboard('vystupnyResult')\">Kopírovať mail</button>
+        <button class='btn copy-btn' type='button' onclick=\"openEmailInOutlook('vystupnyResult', '{email_priemcu}')\">Otvoriť v Outlooku</button>
+        <pre id='vystupnyResult'>{result}</pre>
+        </div>"""
 
     form_data = {
         'typ_mailu': request.form.get('typ_mailu', 'nehnutelnost'),
@@ -362,6 +387,7 @@ def vystupny_mail():
     content = ""
     content += "<h2>Výstupný mail</h2>"
     content += "<form method='post'>"
+    content += f"Email príjemcu:<input name='email_priemcu' type='email' value='{request.form.get('email_priemcu', '')}'>"
     content += "Typ výstupného mailu: <select name='typ_mailu' onchange='updateVystupnyMailFields()'>"
     content += f"<option value='nehnutelnost' {'selected' if form_data['typ_mailu']=='nehnutelnost' else ''}>Poistenie nehnuteľnosti</option>"
     content += f"<option value='zivotne' {'selected' if form_data['typ_mailu']=='zivotne' else ''}>Životné poistenie</option>"
@@ -436,8 +462,14 @@ def backoffice():
             flash(str(e))
 
     result_block = ""
+    email_priemcu = request.form.get('email_priemcu', '')
+    meno_klienta = request.form.get('meno_klienta', '')
     if result:
-        result_block = f"<div class='result'><button class='btn copy-btn' type='button' onclick=\"copyToClipboard('backofficeResult')\">Kopírovať email</button><pre id='backofficeResult'>{result}</pre></div>"
+        result_block = f"""<div class='result'>
+        <button class='btn copy-btn' type='button' onclick=\"copyToClipboard('backofficeResult')\">Kopírovať email</button>
+        <button class='btn copy-btn' type='button' onclick=\"openEmailInOutlook('backofficeResult', '{email_priemcu}', '{meno_klienta}')\">Otvoriť v Outlooku</button>
+        <pre id='backofficeResult'>{result}</pre>
+        </div>"""
 
     form_data = {
         'meno_klienta': request.form.get('meno_klienta', ''),
@@ -457,6 +489,7 @@ def backoffice():
     content = ""
     content += "<h2>Backoffice email</h2>"
     content += "<form method='post'>"
+    content += f"Email príjemcu:<input name='email_priemcu' type='email' value='{request.form.get('email_priemcu', 'bo.specialisti@prohypo.sk')}'>"
     content += f"Meno klienta:<input name='meno_klienta' value='{form_data['meno_klienta']}' required>"
     content += f"Číslo zmluvy:<input name='cislo_zmluvy' value='{form_data['cislo_zmluvy']}' required>"
     content += "Typ zmluvy:<select name='typ_zmluvy' required>"
