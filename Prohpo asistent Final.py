@@ -2,11 +2,23 @@ import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from flask import Flask, render_template_string, request, redirect, url_for, flash
+from functools import wraps
+from flask import Flask, render_template_string, request, redirect, url_for, flash, session
 
 app = Flask(__name__)
 app.secret_key = "prohypo-secret"
 FAQ_FILE_PATH = Path(__file__).resolve().parent / "data" / "faq_items.json"
+
+# Heslo na vstup do aplikácie - môžete ho zmeniť
+APP_PASSWORD = "0000"
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 APP_TEMPLATE = """<!doctype html>
 <html lang="sk">
@@ -88,6 +100,7 @@ APP_TEMPLATE = """<!doctype html>
     <a href="{{ url_for('vystupny_mail') }}">Výstupný mail</a>
     <a href="{{ url_for('backoffice') }}">Backoffice email</a>
         <a href="{{ url_for('najcastejsie_otazky') }}">Najčastejšie otázky</a>
+    <a href="{{ url_for('logout') }}" style="color:#c00;">Odhlásiť sa</a>
   </div>
   <div class="card">
     <h1>ProHypo servis asistent</h1>
@@ -140,7 +153,6 @@ def build_email_text(oslovenie, meno, typ, poistovna, zmluva, vyrocie_pz):
         f"posielam Vám informáciu o blížiacom sa výročí Vašej poistnej zmluvy na {typ} v poisťovni {poistovna} (č. zmluvy: {zmluva}), ktorú sme spoločne uzatvárali.\n"
         f"Výročie tejto poistnej zmluvy je {vyrocie_pz}. Pravdepodobne Vám do mailu prišiel nový predpis na platbu nasledujúceho obdobia.\n"
         f"Neprehliadnite dátum zaplatenia poistnej zmluvy. V prípade nezaplatenia, zmluva zaniká. Spoločne by sme tak museli riešiť proces uzatvárania a vinkulácie zmluvy nanovo.\n\n"
-
         f"Ak ste medzičasom zmluvu zaplatili považujte tento email za vybavený.\n"
         f"V prípade otázok ma kontaktujte.\n\n"
         f"Za odpoveď ďakujem a prajem príjemný zvyšok dňa,"
@@ -187,13 +199,70 @@ def load_faq_items():
     return faq_items
 
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if password == APP_PASSWORD:
+            session['logged_in'] = True
+            return redirect(url_for('home'))
+        else:
+            flash("Nesprávne heslo! Skúste znova.")
+    
+    login_template = """<!doctype html>
+<html lang="sk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ProHypo Asistent - Prihlásenie</title>
+  <style>
+    body{font-family:Segoe UI,Arial,sans-serif;background:#f0f6fc;color:#1a2e5a;margin:0;padding:0;display:flex;align-items:center;justify-content:center;min-height:100vh;}
+    .login-container{background:#fff;border-radius:8px;padding:40px;box-shadow:0 2px 8px rgba(0,0,0,.15);max-width:400px;width:100%;}
+    h1{text-align:center;color:#1a2e5a;margin-bottom:30px;}
+    input{width:100%;padding:10px;margin:10px 0 20px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;}
+    .btn{background:#29b6e8;color:white;padding:11px 15px;border:none;border-radius:4px;cursor:pointer;width:100%;font-weight:bold;}
+    .btn:hover{background:#1e8fb7;}
+    .error{color:#c00;text-align:center;margin-bottom:15px;font-weight:bold;}
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <h1>🔐 ProHypo Asistent</h1>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for msg in messages %}
+          <p class="error">{{ msg }}</p>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    <form method="post">
+      <label for="password" style="display:block;margin-bottom:10px;">Heslo:</label>
+      <input type="password" id="password" name="password" placeholder="Zadajte heslo" required autofocus>
+      <button class="btn" type="submit">Prihlásiť sa</button>
+    </form>
+  </div>
+</body>
+</html>"""
+    
+    return render_template_string(login_template)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("Odhlásili ste sa.")
+    return redirect(url_for('login'))
+
+
 @app.route("/")
+@login_required
 def home():
     return render_template_string(APP_TEMPLATE, content="<p>Víta ťa ProHypo Asistent. Vyber si modul v ktorom chceš pracovať."
     "</p>")
 
 
 @app.route("/notice", methods=["GET", "POST"])
+@login_required
 def notice():
     response = None
     if request.method == "POST":
@@ -227,11 +296,13 @@ def notice():
 
 
 @app.route("/email")
+@login_required
 def email_redirect():
     return redirect(url_for('vypocetny_email'))
 
 
 @app.route("/vypocetny_email", methods=["GET", "POST"])
+@login_required
 def vypocetny_email():
     result = None
     if request.method == "POST":
@@ -286,6 +357,7 @@ def vypocetny_email():
 
 
 @app.route("/vystupny_mail", methods=["GET", "POST"])
+@login_required
 def vystupny_mail():
     result = None
     if request.method == "POST":
@@ -439,6 +511,7 @@ def vystupny_mail():
 
 
 @app.route("/backoffice", methods=["GET", "POST"])
+@login_required
 def backoffice():
     result = None
     if request.method == "POST":
@@ -525,6 +598,7 @@ def backoffice():
 
 
 @app.route("/najcastejsie_otazky")
+@login_required
 def najcastejsie_otazky():
     faq_items = load_faq_items()
     if not faq_items:
