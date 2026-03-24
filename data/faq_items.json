@@ -12,18 +12,17 @@
   {
     "sekcia": "Leasing FO/PO",
     "otazka": "Aké základné údaje potrebujeme pre leasing FO?",
-    "otazka2": "Aké základné údaje potrebujeme pre leasing PO?",
-    "odpoved": "Typicky: meno a priezvisko, rodné číslo/dátum narodenia, adresa trvalého pobytu, kontakt, doklad totožnosti, výška príjmu a informácia o zamestnaní."
+    "odpoved": "Kontaktné údaje:\nMeno a priezvisko, rodné číslo/dátum narodenia, adresa trvalého pobytu, kontakt, doklad totožnosti, výška príjmu a informácia o zamestnaní.\nINFO o vozidle:\nZnačka, model, rok výroby, VIN, predajca\nFinancovaná suma (s DPH/bez), Doba financovania, akontácia"
   },
   {
     "sekcia": "Leasing FO/PO",
     "otazka": "Aké základné údaje potrebujeme pre leasing PO?",
-    "odpoved": "Typicky: meno a priezvisko, rodné číslo/dátum narodenia, adresa trvalého pobytu, kontakt, doklad totožnosti, výška príjmu a informácia o zamestnaní."
+    "odpoved": "Názov spoločnosti\nIČO\nKontaktná osoba (číslo, mail)\nINFO o vozidle:\nZnačka, model, rok výroby, VIN, predajca\nFinancovaná suma (s DPH/bez), Doba financovania, akontácia"
   },
   
   {
     "sekcia": "Leasing FO/PO",
     "otazka": "Na aké maily posielať ponuky?",
-    "odpoved": "Tatra Leasing - (mail)\nVÚB Leasing - (mail)\nCofidis Leasing - (mail)\nUniCredit Leasing - (mail)\nBKS leasing - (mail)"
+    "odpoved": "Tatra Leasing - roman_martinak@tatraleasing.sk\nVÚB Leasing - mdudasova@vub.sk\nCofidis Leasing - lenka.ursiny@cofidis.sk\nUniCredit Leasing - lenka.miklosova@unicreditleasing.sk\nBKS leasing - frantisek.kovacic@bks-leasing.sk"
   }
 ]

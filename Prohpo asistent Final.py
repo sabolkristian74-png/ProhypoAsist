@@ -292,7 +292,7 @@ def vystupny_mail():
             if portal_uzavretia == "externy_portal":
                 portal_sentence = "Platobné údaje nájdete v tele mailu, ktorý Vám prišiel z portálu poisťovne spolu so zmluvnou dokumentáciou."
             else:
-                portal_sentence = "Platobné údaje nájdete v tele mailu, ktorý Vám prišiel zo systému najpoistenie spolu so zmluvnou dokumentáciou."
+                portal_sentence = "Platobné údaje nájdete v tele mailu, ktorý Vám prišiel zo systému Najpoistenie spolu so zmluvnou dokumentáciou."
             if not all([oslovenie, priezvisko, typ, adresa]):
                 flash("Vyplňte všetky polia pre nehnuteľnosť!")
             else:
