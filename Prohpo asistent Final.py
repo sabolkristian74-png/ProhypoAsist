@@ -139,18 +139,19 @@ def calculate_notice_date(day_text, month_text, year_text):
     return result_date.strftime("%d.%m.%Y")
 
 
-def build_email_text(oslovenie, meno, typ, poistovna, zmluva, vyrocie_pz):
+def build_email_text(oslovenie, meno, typ, adresa_nehnutelnosti, poistovna, zmluva, vyrocie_pz):
     oslovenie = str(oslovenie).strip()
     meno = str(meno).strip()
     typ = str(typ).strip()
+    adresa_nehnutelnosti = str(adresa_nehnutelnosti).strip()
     poistovna = str(poistovna).strip()
     zmluva = str(zmluva).strip()
     vyrocie_pz = str(vyrocie_pz).strip()
-    if not all([oslovenie, meno, typ, poistovna, zmluva, vyrocie_pz]):
+    if not all([oslovenie, meno, typ, adresa_nehnutelnosti, poistovna, zmluva, vyrocie_pz]):
         raise ValueError("Vyplň všetky polia!")
     return (
         f"Dobrý deň {oslovenie} {meno},\n\n"
-        f"posielam Vám informáciu o blížiacom sa výročí Vašej poistnej zmluvy na {typ} v poisťovni {poistovna} (č. zmluvy: {zmluva}), ktorú sme spoločne uzatvárali.\n"
+        f"posielam Vám informáciu o blížiacom sa výročí Vašej poistnej zmluvy {typ} na adrese {adresa_nehnutelnosti} v poisťovni {poistovna} (č. zmluvy: {zmluva}), ktorú sme spoločne uzatvárali.\n"
         f"Výročie tejto poistnej zmluvy je {vyrocie_pz}. Pravdepodobne Vám do mailu prišiel nový predpis na platbu nasledujúceho obdobia.\n"
         f"Neprehliadnite dátum zaplatenia poistnej zmluvy. V prípade nezaplatenia, zmluva zaniká. Spoločne by sme tak museli riešiť proces uzatvárania a vinkulácie zmluvy nanovo.\n\n"
         f"Ak ste medzičasom zmluvu zaplatili považujte tento email za vybavený.\n"
@@ -306,7 +307,7 @@ def email_redirect():
 def vypocetny_email():
     result = None
     if request.method == "POST":
-        data = {k: request.form.get(k, "") for k in ["oslovenie", "meno", "typ", "poistovna", "zmluva", "vyrocie_pz"]}
+        data = {k: request.form.get(k, "") for k in ["oslovenie", "meno", "typ", "adresa_nehnutelnosti", "poistovna", "zmluva", "vyrocie_pz"]}
         try:
             result = build_email_text(**data)
         except Exception as e:
@@ -324,6 +325,7 @@ def vypocetny_email():
     prazdne_data = {
         'meno': request.form.get('meno', ''),
         'typ': request.form.get('typ', 'byt'),
+        'adresa_nehnutelnosti': request.form.get('adresa_nehnutelnosti', ''),
         'poistovna': request.form.get('poistovna', 'Allianz'),
         'zmluva': request.form.get('zmluva', ''),
         'vyrocie_pz': request.form.get('vyrocie_pz', '01.01.2027'),
@@ -336,9 +338,10 @@ def vypocetny_email():
     content += f"Meno:<input name='meno' value='{prazdne_data['meno']}' required>"
     content += f"Email príjemcu:<input name='email_priemcu' type='email' value='{request.form.get('email_priemcu', '')}'>"
     content += "Typ nehnuteľnosti:<select name='typ' required>"
-    content += f"<option value='byt' {'selected' if prazdne_data['typ'].lower()=='byt' else ''}>Byt</option>"
-    content += f"<option value='dom' {'selected' if prazdne_data['typ'].lower()=='dom' else ''}>Dom</option>"
+    content += f"<option value='bytu' {'selected' if prazdne_data['typ'].lower()=='bytu' else ''}>Byt</option>"
+    content += f"<option value='domu' {'selected' if prazdne_data['typ'].lower()=='domu' else ''}>Dom</option>"
     content += "</select>"
+    content += f"Adresa nehnuteľnosti:<input name='adresa_nehnutelnosti' value='{prazdne_data['adresa_nehnutelnosti']}' required>"
     content += "Poisťovňa:<select name='poistovna' required>"
     content += f"<option value='Allianz' {'selected' if prazdne_data['poistovna']=='Allianz' else ''}>Allianz</option>"
     content += f"<option value='Generali' {'selected' if prazdne_data['poistovna']=='Generali' else ''}>Generali</option>"
@@ -471,9 +474,9 @@ def vystupny_mail():
     # Sekcia pre nehnuteľnosť
     content += f"<div id='nehnutelnost_fields' style='display:{'block' if form_data['typ_mailu']=='nehnutelnost' else 'none'};'>"
     content += "Typ nehnuteľnosti:<select name='typ_nehnutelnosti'>"
-    content += f"<option value='Byt' {'selected' if form_data['typ_nehnutelnosti']=='Byt' else ''}>Byt</option>"
-    content += f"<option value='Rodinný dom' {'selected' if form_data['typ_nehnutelnosti']=='Rodinný dom' else ''}>Rodinný dom</option>"
-    content += f"<option value='Apartmán' {'selected' if form_data['typ_nehnutelnosti']=='Apartmán' else ''}>Apartmán</option>"
+    content += f"<option value='bytu' {'selected' if form_data['typ_nehnutelnosti']=='Byt' else ''}>Byt</option>"
+    content += f"<option value='rodinného domu' {'selected' if form_data['typ_nehnutelnosti']=='Rodinný dom' else ''}>Rodinný dom</option>"
+    content += f"<option value='apartmánu' {'selected' if form_data['typ_nehnutelnosti']=='Apartmán' else ''}>Apartmán</option>"
     content += "</select>"
     content += f"Adresa nehnuteľnosti:<input name='adresa' value='{form_data['adresa']}' >"
     content += "Uzatvorenie poistenia: <select name='portal_uzavretia'>"
