@@ -1,0 +1,82 @@
+[
+  {
+    "sekcia": "Práceneschopnosť",
+    "otazka": "... úrazy tvoria len 5% všetkých práceneschopností (PN)?",
+    "odpoved": "Až 95% prípadov, kedy ľudia nemôžu chodiť do práce a prichádzajú o príjem, tvoria choroby."
+  },
+  {
+    "sekcia": "Onkologické ochorenia",
+    "otazka": "... slovenská poisťovňa vám automaticky preplatí len približne 36% najmodernejších onkologických liekov?",
+    "odpoved": "Zvyšné moderné európske lieky si buď musíte zaplatiť sami (čo stojí 3 000 až 8 000 eur mesačne), alebo o ne musíte poisťovňu dlho prosiť cez výnimky."
+  },
+  {
+    "sekcia": "Onkologické ochorenia",
+    "otazka": "... aj keď vám poisťovňa schváli liek na výnimku, zákon jej zakazuje preplatiť celú sumu?",
+    "odpoved": "Pri starších inovatívnych liekoch dopláca pacient až 25% ceny z vlastného vrecka, čo sú v praxi stovky až tisícky eur mesačne."
+  },
+  {
+    "sekcia": "Onkologické ochorenia",
+    "otazka": "... najčastejšou rakovinou u slovenských mužov nie je rakovina pľúc?",
+    "odpoved": "Prvé dve priečky absolútne ovláda rakovina hrubého čreva a rakovina prostaty. Práve pri týchto dvoch diagnózach je obrovské množstvo moderných liekov nehradených štátom."
+  },
+  {
+    "sekcia": "Karidovaskulárne ochorenia",
+    "otazka": "... na kardiovaskulárne ochorenia (srdce a cievy) zomrie u nás ročne okolo 25 000 ľudí?",
+    "odpoved": "Je to viac úmrtí, ako spôsobia všetky rakoviny a všetky úrazy (napr. pri autonehodách) dohromady."
+  },
+  {
+    "sekcia": "Onkologické ochorenia",
+    "otazka": "... takmer 90% všetkých prípadov kritických chorôb u nás tvorí len \"Veľká trojka\"?",
+    "odpoved": "Sú to rakovina, mŕtvica a infarkt. Mať poistených 60 exotických chorôb (ako tetanus či malária) je vám zbytočné, ak nemáte stopercentne pokryté tieto tri hlavné hrozby."
+  },
+  {
+    "sekcia": "Karidovaskulárne ochorenia",
+    "otazka": "... desaťtisíce infarktov, mŕtvic a rakovín ročne postihnú ľudí mladších ako 64 rokov?",
+    "odpoved": "Tieto \"choroby staroby\" čoraz častejšie útočia v produktívnom veku, keď rodiny najviac splácajú hypotéky a živia deti."
+  },
+  {
+    "sekcia": "Onkologické ochorenia",
+    "otazka": "... pri rakovine ste na PN-ke v priemere vyše 4 mesiace (121 dní) a pri problémoch s chrbticou takmer 3 mesiace (78 dní)?",
+    "odpoved": "Počas celej tejto doby poberáte od štátu len niečo vyše polovicu svojej bežnej výplaty."
+  },
+  {
+    "sekcia": "Trvalé následky úrazov",
+    "otazka": "... amputácie a strata končatín tvoria len 4% všetkých trvalých následkov po úrazoch?",
+    "odpoved": "Naopak, až 42% sú \"obyčajné\" zlomeniny s trvalým obmedzením hybnosti a 18% tvoria trvalé jazvy po operáciách a ranách."
+  },
+  {
+    "sekcia": "Karidovaskulárne ochorenia",
+    "otazka": "... liečenie infarktu či mŕtvice po návrate z nemocnice nie je zadarmo?",
+    "odpoved": "Len doplatky za jednolôžkovú izbu v kúpeľoch a následná odborná súkromná fyzioterapia vás ľahko vyjdú na viac ako 1 000 eur v hotovosti."
+  },
+  {
+    "sekcia": "Invalidita",
+    "otazka": "... každý 12. Slovák v produktívnom veku poberá nejakú formu invalidného dôchodku?",
+    "odpoved": "Na Slovensku je viac ako 224-tisíc invalidných dôchodcov, čo znamená, že pravdepodobnosť, že sa to stane komukoľvek vo vašom okolí, je extrémne vysoká."
+  },
+   {
+    "sekcia": "Invalidita",
+    "otazka": "... úrazy tvoria iba chabé 3% zo všetkých príčin invalidity na Slovensku?",
+    "odpoved": "Obrovským mýtom je strach z ťažkých úrazov, no v skutočnosti až ohromných 97% invalidných dôchodkov spôsobujú choroby."
+  },
+     {
+    "sekcia": "Invalidita",
+    "otazka": "... najčastejším dôvodom plnej invalidity (nad 70%) sú onkologické ochorenia?",
+    "odpoved": "V prvom polroku 2025 nádory spôsobili až 61% zo všetkých novouznaných prípadov plnej invalidity. Pri ženách je tento podiel ešte desivejší – rakovina tam stojí za viac ako 74% všetkých plných invalidít"
+  },
+       {
+    "sekcia": "Onkologické ochorenia",
+    "otazka": "... doplácanie aj za liek ktorý platí poisťovňa?",
+    "odpoved": "Podľa zákona poiťovňa nesmie liek uhradiť v plnej výške. Výška úhrady od poisťovne závisí od toho, ako dlho je liek na trhu:\nMax. 90% ceny pri liekoch do 12 mesiacov na trhu.\nMax. 80% pri liekoch od 12 do 24 mesiacov.\nMax. 75% pri liekoch starších ako 2 roky"
+  },
+     {
+    "sekcia": "Invalidita",
+    "otazka": "... priemerný invalidný dôchodok?",
+    "odpoved": "Pri invalidite do 70% je to 333,14€. Nad 70% je to 595,24€ (podľa výšky príjmu a odpracovaných rokov)."
+    },
+{
+    "sekcia": "Invalidita",
+    "otazka": "... vek invalidov na Slovensku?",
+    "odpoved": "35% všetkých invalidných dôchodcov je mladších ako 49 rokov\n1 z 5 osôb sa počas svojho produktívneho veku stane invalidným."
+  }
+]

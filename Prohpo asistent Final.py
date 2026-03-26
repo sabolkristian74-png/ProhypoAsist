@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
@@ -8,6 +9,7 @@ from flask import Flask, render_template_string, request, redirect, url_for, fla
 app = Flask(__name__)
 app.secret_key = "prohypo-secret"
 FAQ_FILE_PATH = Path(__file__).resolve().parent / "data" / "faq_items.json"
+INTERESTING_NUMBERS_FILE_PATH = Path(__file__).resolve().parent / "data" / "zaujimave_cisla.json"
 
 # Heslo na vstup do aplikácie - môžete ho zmeniť
 APP_PASSWORD = "0000"
@@ -15,7 +17,7 @@ APP_PASSWORD = "0000"
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'logged_in' not in session:
+        if session.get('logged_in') is not True:
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -83,12 +85,19 @@ APP_TEMPLATE = """<!doctype html>
 
     window.addEventListener('load', updateVystupnyMailFields);
 
-        function toggleFaqAnswer(button) {
-            const answer = button.nextElementSibling;
-            if (!answer) return;
-            const isOpen = answer.style.display === 'block';
-            answer.style.display = isOpen ? 'none' : 'block';
-        }
+    function toggleFaqAnswer(button) {
+        const answer = button.nextElementSibling;
+        if (!answer) return;
+        const isOpen = answer.style.display === 'block';
+        answer.style.display = isOpen ? 'none' : 'block';
+    }
+
+    function toggleFeedbackForm() {
+        const container = document.getElementById('feedbackContainer');
+        if (!container) return;
+        const isOpen = container.style.display === 'block';
+        container.style.display = isOpen ? 'none' : 'block';
+    }
   </script>
 </head>
 <body>
@@ -99,7 +108,8 @@ APP_TEMPLATE = """<!doctype html>
     <a href="{{ url_for('vypocetny_email') }}">Výročný email</a>
     <a href="{{ url_for('vystupny_mail') }}">Výstupný mail</a>
     <a href="{{ url_for('backoffice') }}">Backoffice email</a>
-        <a href="{{ url_for('najcastejsie_otazky') }}">Najčastejšie otázky</a>
+    <a href="{{ url_for('najcastejsie_otazky') }}">Najčastejšie otázky</a>
+    <a href="{{ url_for('zaujimave_cisla') }}">Zaujímavé čísla</a>
     <a href="{{ url_for('logout') }}" style="color:#c00;">Odhlásiť sa</a>
   </div>
   <div class="card">
@@ -200,14 +210,45 @@ def load_faq_items():
     return faq_items
 
 
+def linkify_text(text):
+    if not text:
+        return ""
+    pattern = re.compile(r"(https?://[^\s<>'\"]+)")
+    return pattern.sub(
+        r"<a href='\1' target='_blank' rel='noopener noreferrer'>\1</a>",
+        text,
+    )
+
+
+def load_interesting_numbers():
+    if not INTERESTING_NUMBERS_FILE_PATH.exists():
+        return []
+    with INTERESTING_NUMBERS_FILE_PATH.open("r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    items = []
+    for item in data:
+        sekcia = str(item.get("sekcia", "Vedeli ste, že...?")).strip() or "Vedeli ste, že...?"
+        otazka = str(item.get("otazka", "")).strip()
+        odpoved = str(item.get("odpoved", "")).strip()
+        if not otazka or not odpoved:
+            continue
+        items.append({"sekcia": sekcia, "otazka": otazka, "odpoved": odpoved})
+    return items
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    if session.get('logged_in') is True:
+        return redirect(url_for('home'))
+
     if request.method == "POST":
         password = request.form.get("password", "")
         if password == APP_PASSWORD:
             session['logged_in'] = True
             return redirect(url_for('home'))
         else:
+            session['logged_in'] = False
             flash("Nesprávne heslo! Skúste znova.")
     
     login_template = """<!doctype html>
@@ -258,8 +299,23 @@ def logout():
 @app.route("/")
 @login_required
 def home():
-    return render_template_string(APP_TEMPLATE, content="<p>Víta ťa ProHypo Asistent. Vyber si modul v ktorom chceš pracovať."
-    "</p>")
+    content = (
+        "<div style='display:flex; flex-direction:column; min-height:60vh;'>"
+        "<div><p>Víta ťa ProHypo Asistent. Vyber si modul v ktorom chceš pracovať.</p></div>"
+        "<div style='margin-top:auto; padding-top:30px; border-top:1px solid #e0e0e0;'>"
+        "<button type='button' class='btn' onclick=\"toggleFeedbackForm()\">Mám nápad / Našiel som chybu</button>"
+        "<div id='feedbackContainer' style='display:none; margin-top:15px; transition:all 0.3s ease;'>"
+        "<p style='font-size:0.9rem;color:#666;'>Našiel si chybu alebo máš nápad na vylepšenie? Napíš nám o tom!</p>"
+        "<form>"
+        "<label for='chybatext' style='display:block;margin-bottom:8px;font-weight:bold;'>Tvoja správa:</label>"
+        "<textarea id='chybatext' placeholder='Opíš chybu alebo podaj nápad na zlepšenie...' style='min-height:120px;'></textarea>"
+        "<button type='button' class='btn' onclick=\"openEmailInOutlook('chybatext', 'kristiansamuel.sabol@prohypo.sk', 'Chyba alebo zmena v aplikácií')\">Poslať na programátora</button>"
+        "</form>"
+        "</div>"
+        "</div>"
+        "</div>"
+    )
+    return render_template_string(APP_TEMPLATE, content=content)
 
 
 @app.route("/notice", methods=["GET", "POST"])
@@ -590,7 +646,7 @@ def backoffice():
     content += f"<option value='Fio' {'selected' if form_data['delenie_provizie']=='Fio' else ''}>Fio</option>"
     content += f"<option value='Miško' {'selected' if form_data['delenie_provizie']=='Miško' else ''}>Miško</option>"
     content += f"<option value='Naty' {'selected' if form_data['delenie_provizie']=='Naty' else ''}>Naty</option>"
-    content += f"<option value='Finax' {'selected' if form_data['delenie_provizie']=='Finax' else ''}>Finax</option>"
+    content += f"<option value='Finax - poslať Nadi !' {'selected' if form_data['delenie_provizie']=='Finax' else ''}>Finax</option>"
     content += "</select>"
     content += f"Iné:<input name='ine' value='{form_data['ine']}'>"
     content += f"Poznámky:<textarea name='poznamky'>{form_data['poznamky']}</textarea>"
@@ -613,10 +669,49 @@ def najcastejsie_otazky():
     for item in faq_items:
         groups.setdefault(item["sekcia"], []).append(item)
 
+    nadine_links = {
+        "Vinkulácie": "https://docs.google.com/spreadsheets/d/1sM415O7Mcw9x9dlFe9MYvXNRn-sjHiE8/edit?gid=508251846#gid=508251846"
+    }
+
     content = "<h2>Najčastejšie otázky</h2>"
     for sekcia, items in groups.items():
         content += f"<div class='faq-group'><h3>{sekcia}</h3>"
         for item in items:
+            answer_html = linkify_text(item["odpoved"])
+            content += "<div class='faq-item'>"
+            content += f"<button type='button' class='faq-question' onclick='toggleFaqAnswer(this)'>{item['otazka']}</button>"
+            content += f"<div class='faq-answer'>{answer_html}"
+            if sekcia == "Nadine linky" and item["otazka"] == "Na ktorom linku, čo nájdem?":
+                content += "<div class='faq-links' style='margin-top:10px;'>"
+                for title, url in nadine_links.items():
+                    content += (
+                        f"<a class='btn' href='{url}' target='_blank' rel='noopener noreferrer'>{title}</a>"
+                    )
+                content += "</div>"
+            content += "</div>"
+            content += "</div>"
+        content += "</div>"
+
+    return render_template_string(APP_TEMPLATE, content=content)
+
+
+@app.route("/zaujimave_cisla")
+@login_required
+def zaujimave_cisla():
+    items = load_interesting_numbers()
+    if not items:
+        flash("Súbor zaujímavých čísel je prázdny alebo chýba.")
+        content = "<h2>Zaujímavé čísla</h2><p>Zatiaľ nie sú dostupné žiadne údaje.</p>"
+        return render_template_string(APP_TEMPLATE, content=content)
+
+    groups = {}
+    for item in items:
+        groups.setdefault(item["sekcia"], []).append(item)
+
+    content = "<h2>Zaujímavé čísla</h2>"
+    for sekcia, section_items in groups.items():
+        content += f"<div class='faq-group'><h3>{sekcia}</h3>"
+        for item in section_items:
             content += "<div class='faq-item'>"
             content += f"<button type='button' class='faq-question' onclick='toggleFaqAnswer(this)'>{item['otazka']}</button>"
             content += f"<div class='faq-answer'>{item['odpoved']}</div>"
