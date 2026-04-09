@@ -322,6 +322,7 @@ def home():
 @login_required
 def notice():
     response = None
+    today = datetime.now()
     if request.method == "POST":
         day = request.form.get("day")
         month = request.form.get("month")
@@ -331,9 +332,9 @@ def notice():
         except Exception as e:
             flash(str(e))
 
-    day_value = request.form.get('day', '16')
-    month_value = request.form.get('month', '3')
-    year_value = request.form.get('year', '2026')
+    day_value = request.form.get('day') or str(today.day)
+    month_value = request.form.get('month') or str(today.month)
+    year_value = request.form.get('year') or str(today.year)
 
     result_html = ""
     if response:
@@ -362,6 +363,7 @@ def email_redirect():
 @login_required
 def vypocetny_email():
     result = None
+    today_str = datetime.now().strftime("%d.%m.%Y")
     if request.method == "POST":
         data = {k: request.form.get(k, "") for k in ["oslovenie", "meno", "typ", "adresa_nehnutelnosti", "poistovna", "zmluva", "vyrocie_pz"]}
         try:
@@ -384,7 +386,7 @@ def vypocetny_email():
         'adresa_nehnutelnosti': request.form.get('adresa_nehnutelnosti', ''),
         'poistovna': request.form.get('poistovna', 'Allianz'),
         'zmluva': request.form.get('zmluva', ''),
-        'vyrocie_pz': request.form.get('vyrocie_pz', '01.01.2027'),
+        'vyrocie_pz': request.form.get('vyrocie_pz', today_str),
     }
 
     content = ""
