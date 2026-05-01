@@ -1,3 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# allow overriding host/port via env vars
+PORT=${PORT:-8000}
+HOST=${HOST:-0.0.0.0}
+
+if [ -f .venv/bin/activate ]; then
+  # shellcheck disable=SC1091
+  source .venv/bin/activate
+fi
+
+exec uvicorn main:app --reload --host "$HOST" --port "$PORT"
 #!/bin/bash
 set -e
 

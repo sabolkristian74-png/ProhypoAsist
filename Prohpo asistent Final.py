@@ -1,10 +1,15 @@
 import json
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
 from functools import wraps
-from flask import Flask, render_template_string, request, redirect, url_for, flash, session
+from flask import Flask, render_template_string, request, redirect, url_for, flash, session, jsonify
+from calculations.hypo import (
+    calculate_monthly_payment,
+    generate_amortization_schedule,
+    optimize_insurance_initial,
+)
 
 app = Flask(__name__)
 app.secret_key = "prohypo-secret"
@@ -29,21 +34,28 @@ APP_TEMPLATE = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ProHypo Asistent </title>
   <style>
-    body{font-family:Segoe UI,Arial,sans-serif;background:#f0f6fc;color:#1a2e5a;margin:0;padding:0;}
-    .container{max-width:960px;margin:0 auto;padding:28px;}
-    .nav{margin-bottom:24px;}
-    .nav a{margin-right:12px;text-decoration:none;color:#29b6e8;font-weight:bold;}
+    body{font-family:Segoe UI,Arial,sans-serif;background:#f0f6fc;color:#1a2e5a;margin:0;padding:0;overflow-x:hidden;}
+    .app-wrapper{display:flex;min-height:100vh;gap:0;}
+    .sidebar{width:200px;background:#fff;border-right:1px solid #ddd;padding:16px 0;box-shadow:2px 0 8px rgba(0,0,0,.08);}
+    .nav{display:flex;flex-direction:column;gap:2px;padding:0;margin:0;}
+    .nav a{display:block;padding:12px 16px;text-decoration:none;color:#29b6e8;font-weight:500;border-left:3px solid transparent;font-size:0.95rem;transition:all 0.2s;}
+    .nav a:hover{background:#f0f6fc;border-left-color:#29b6e8;color:#1e8fb7;}
+    .nav a[href*="logout"]{color:#c00;margin-top:auto;}
+    .main-content{flex:1;padding:20px;overflow-y:auto;}
+    .container{width:100%;max-width:none;margin:0;padding:0;box-sizing:border-box;}
     .card{background:#fff;border-radius:8px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1);}
+    .app-shell{width:100%;max-width:none;margin:0;box-sizing:border-box;background:#fff;border-radius:8px;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,.1);}
     input,select,textarea{width:100%;padding:8px;margin:4px 0 12px;border:1px solid #ccc;border-radius:4px;}
     .btn{background:#29b6e8;color:white;padding:10px 14px;border:none;border-radius:4px;cursor:pointer;}
     .btn:hover{background:#1e8fb7;}
     .error{color:#c00;font-weight:bold;}
     .result{background:#edf7f9;color:#046f8d;border:1px solid #29b6e8;padding:12px;border-radius:4px;white-space:pre-wrap;}
     .copy-btn{margin-bottom:10px;}
-    .faq-group{margin-bottom:20px;}
+    .faq-group{margin-bottom:20px;max-width:50%;margin-left:0;margin-right:auto;}
     .faq-item{margin:0 0 10px;}
     .faq-question{width:100%;text-align:left;background:#edf7f9;color:#046f8d;border:1px solid #29b6e8;padding:10px;border-radius:4px;cursor:pointer;font-weight:600;}
     .faq-answer{display:none;background:#f8fbff;border:1px solid #d6e6f5;border-radius:4px;padding:10px;margin-top:6px;white-space:pre-wrap;}
+    .form-container{max-width:50%;margin:0;}
   </style>
   <script>
     function copyToClipboard(elementId) {
@@ -100,29 +112,37 @@ APP_TEMPLATE = """<!doctype html>
     }
   </script>
 </head>
-<body>
-<div class="container">
-  <div class="nav">
-    <a href="{{ url_for('home') }}">Domov</a>
-    <a href="{{ url_for('notice') }}">Výpovedná lehota</a>
-    <a href="{{ url_for('vypocetny_email') }}">Výročný email</a>
-    <a href="{{ url_for('vystupny_mail') }}">Výstupný mail</a>
-    <a href="{{ url_for('backoffice') }}">Backoffice email</a>
-    <a href="{{ url_for('najcastejsie_otazky') }}">Najčastejšie otázky</a>
-    <a href="{{ url_for('zaujimave_cisla') }}">Zaujímavé čísla</a>
-    <a href="{{ url_for('logout') }}" style="color:#c00;">Odhlásiť sa</a>
+<body style="margin:0;padding:0;overflow-x:hidden;">
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div class="nav">
+      <a href="{{ url_for('home') }}">🏠 Domov</a>
+      <a href="{{ url_for('notice') }}">📅 Výpovedná lehota</a>
+      <a href="{{ url_for('vypocetny_email') }}">📧 Výročný email</a>
+      <a href="{{ url_for('vystupny_mail') }}">📤 Výstupný mail</a>
+      <a href="{{ url_for('backoffice') }}">⚙️ Backoffice email</a>
+      <a href="{{ url_for('hypo') }}">🏦 Hypo VS Poistná suma</a>
+      <a href="{{ url_for('izp') }}">📊 IŽP</a>
+      <a href="{{ url_for('najcastejsie_otazky') }}">❓ FAQ</a>
+      <a href="{{ url_for('zaujimave_cisla') }}">📈 Čísla</a>
+      <a href="{{ url_for('logout') }}">🚪 Odhlásiť sa</a>
+    </div>
   </div>
-  <div class="card">
-    <h1>ProHypo servis asistent</h1>
-    <p style="font-size:0.9rem;color:#FFFFFF;margin:6px 0;">Aktuálny URL: <strong>{{ request.url_root }}</strong> <br>Aktuálny host: <strong>{{ request.host }}</strong></p>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for cat, msg in messages %}
-          <p class="error">{{ msg }}</p>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-    {{ content|safe }}
+  
+  <div class="main-content">
+    <div class="container">
+      <div class="app-shell">
+        <h1 style="margin-top:0;">ProHypo servis asistent</h1>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for cat, msg in messages %}
+              <p class="error">{{ msg }}</p>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+        {{ content|safe }}
+      </div>
+    </div>
   </div>
 </div>
 </body>
@@ -340,6 +360,7 @@ def notice():
     if response:
         result_html = f"<div class='result'>Dátum doručenia výpovede: <strong>{response}</strong></div>"
     content = (
+        "<div class='form-container'>"
         "<h2>Zadaj dátum výročia PZ</h2>"
         "<form method='post'>"
         f"Deň:<input name='day' value='{day_value}' required>"
@@ -348,6 +369,7 @@ def notice():
         "<button class='btn' type='submit'>Vypočítať</button>"
         "</form>"
         f"{result_html}"
+        "</div>"
     )
 
     return render_template_string(APP_TEMPLATE, content=content)
@@ -390,6 +412,7 @@ def vypocetny_email():
     }
 
     content = ""
+    content += "<div class='form-container'>"
     content += "<h2>Výročný email</h2>"
     content += "<form method='post'>"
     content += "Oslovenie:<select name='oslovenie'><option value='pán'>pán</option><option value='pani'>pani</option></select>"
@@ -413,6 +436,7 @@ def vypocetny_email():
     content += f"Výročie PZ:<input name='vyrocie_pz' value='{prazdne_data['vyrocie_pz']}' required>"
     content += "<button class='btn' type='submit'>Vygenerovať</button>"
     content += "</form>"
+    content += "</div>"
     content += result_block
     return render_template_string(APP_TEMPLATE, content=content)
 
@@ -518,6 +542,7 @@ def vystupny_mail():
     }
 
     content = ""
+    content += "<div class='form-container'>"
     content += "<h2>Výstupný mail</h2>"
     content += "<form method='post'>"
     content += f"Email príjemcu:<input name='email_priemcu' type='email' value='{request.form.get('email_priemcu', '')}'>"
@@ -567,6 +592,7 @@ def vystupny_mail():
 
     content += "<button class='btn' type='submit'>Vygenerovať</button>"
     content += "</form>"
+    content += "</div>"
     content += result_block
     return render_template_string(APP_TEMPLATE, content=content)
 
@@ -621,6 +647,7 @@ def backoffice():
     }
 
     content = ""
+    content += "<div class='form-container'>"
     content += "<h2>Backoffice email</h2>"
     content += "<form method='post'>"
     content += f"Email príjemcu:<input name='email_priemcu' type='email' value='{request.form.get('email_priemcu', 'bo.specialisti@prohypo.sk')}'>"
@@ -654,6 +681,7 @@ def backoffice():
     content += f"Poznámky:<textarea name='poznamky'>{form_data['poznamky']}</textarea>"
     content += "<button class='btn' type='submit'>Vygenerovať</button>"
     content += "</form>"
+    content += "</div>"
     content += result_block
     return render_template_string(APP_TEMPLATE, content=content)
 
@@ -721,6 +749,621 @@ def zaujimave_cisla():
         content += "</div>"
 
     return render_template_string(APP_TEMPLATE, content=content)
+
+
+@app.route("/hypo", methods=["GET"])
+@login_required
+def hypo():
+    content = """
+    <h2>Hypotekárna kalkulačka - Hypo VS Poistná suma</h2>
+    <div style="display:flex;gap:20px;align-items:flex-start;">
+      <div style="width:300px;">
+        <div class="card" style="padding:16px;">
+          <h4 style="margin-top:0;">Vstupné údaje</h4>
+          <label><strong>Výška úveru (€)</strong></label>
+          <input type="number" id="loan_amount" value="Zadaj výšku úveru" step="1000">
+          <label><strong>Ročná úroková sadzba (%)</strong></label>
+          <input type="number" id="annual_rate" value="3.8" step="0.1">
+          <label><strong>Doba splácania (roky)</strong></label>
+          <input type="number" id="years" value="30" step="1">
+          <label><strong>Dátum prvej splátky</strong></label>
+          <input type="date" id="first_payment">
+          <hr style="margin:16px 0;">
+          <h4 style="margin-top:0;">Parametre poistenia</h4>
+          <label><strong>Poistná suma (€)</strong></label>
+          <input type="number" id="insurance_sum" value="200000" step="1000">
+          <label><strong>Poistná doba (roky)</strong></label>
+          <input type="number" id="insurance_years" value="30" step="1">
+          <label><strong>Navýšenie PS (%)</strong></label>
+          <input type="number" id="increase_pct" value="0" step="0.1">
+          <div style="margin-top:16px;">
+            <button class="btn" onclick="runHypoCalc()" style="width:100%;padding:12px;">Vypočítať</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1;">
+        <div id="hypo_alerts" style="margin-bottom:16px;"></div>
+        
+        <div id="hypo_results" style="display:none;">
+          <div class="card" style="padding:16px;margin-bottom:16px;">
+            <div style="display:flex;gap:16px;align-items:center;justify-content:space-around;">
+              <div style="text-align:center;padding:12px;">
+                <div style="font-size:0.85rem;color:#666;">Výška úverového zostatku</div>
+                <div id="summary_balance" style="font-weight:700;font-size:1.4rem;color:#0066cc;">—</div>
+              </div>
+              <div style="text-align:center;padding:12px;">
+                <div style="font-size:0.85rem;color:#666;">Poistná suma pôvodná</div>
+                <div id="summary_insurance" style="font-weight:700;font-size:1.4rem;color:#0066cc;">—</div>
+              </div>
+              <div style="text-align:center;padding:12px;">
+                <div style="font-size:0.85rem;color:#666;">Podpoistenie</div>
+                <div id="summary_diff" style="font-weight:700;font-size:1.4rem;color:#c00;">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="padding:16px;margin-bottom:16px;">
+            <h4 style="margin-top:0;">Graf splátok a poistenia</h4>
+          <canvas id="hypo_chart" height="180"></canvas>
+          <div class="card" style="padding:16px;">
+            <h4 style="margin-top:0;">Tabuľka splátok (prvých 50 mesiacov)</h4>
+            <div style="max-height:300px;overflow-y:auto;border:1px solid #eee;border-radius:4px;">
+              <table style="width:100%;font-size:0.85rem;border-collapse:collapse;">
+                <thead style="background:#f5f5f5;position:sticky;top:0;">
+                  <tr>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid #ddd;">Mesiac</th>
+                    <th style="padding:8px;text-align:right;border-bottom:1px solid #ddd;">Splátka</th>
+                    <th style="padding:8px;text-align:right;border-bottom:1px solid #ddd;">Úrok</th>
+                    <th style="padding:8px;text-align:right;border-bottom:1px solid #ddd;">Zostatok</th>
+                    <th style="padding:8px;text-align:right;border-bottom:1px solid #ddd;">Poistenie</th>
+                    <th style="padding:8px;text-align:right;border-bottom:1px solid #ddd;">Rozdiel</th>
+                  </tr>
+                </thead>
+                <tbody id="hypo_table_body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+      let hypoChart = null;
+      
+      function fmt(val) {
+        return Number(val).toLocaleString('sk-SK', {style: 'currency', currency: 'EUR'});
+      }
+
+      async function runHypoCalc() {
+        const payload = {
+          loan_amount: parseFloat(document.getElementById('loan_amount').value || 0),
+          annual_rate: parseFloat(document.getElementById('annual_rate').value || 0),
+          years: parseInt(document.getElementById('years').value || 0),
+          first_payment: document.getElementById('first_payment').value || new Date().toISOString().slice(0, 10),
+          insurance_sum: parseFloat(document.getElementById('insurance_sum').value || 0),
+          insurance_years: parseInt(document.getElementById('insurance_years').value || 0),
+          increase_pct: parseFloat(document.getElementById('increase_pct').value || 0),
+        };
+
+        try {
+          const res = await fetch('/hypo/calc', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+          });
+
+          if (!res.ok) {
+            const err = await res.json();
+            document.getElementById('hypo_alerts').innerHTML = '<div class="error" style="padding:12px;background:#ffecec;border:1px solid #f5c2c7;border-radius:4px;color:#842029;">⚠️ Chyba: ' + (err.error || 'Neznáma chyba') + '</div>';
+            return;
+          }
+
+          const data = await res.json();
+          renderHypoResults(data);
+        } catch (e) {
+          document.getElementById('hypo_alerts').innerHTML = '<div class="error" style="padding:12px;background:#ffecec;border:1px solid #f5c2c7;border-radius:4px;color:#842029;">⚠️ Chyba pripojenia: ' + e.message + '</div>';
+        }
+      }
+
+      function renderHypoResults(data) {
+        // Show results section
+        document.getElementById('hypo_results').style.display = 'block';
+        
+        // Summary cards
+        const last = data.schedule[data.schedule.length - 1];
+        document.getElementById('summary_balance').innerText = fmt(data.schedule[0].balance);
+        document.getElementById('summary_insurance').innerText = fmt(data.schedule[0].insurance);
+        
+        const diffs = data.schedule.map(r => r.difference);
+        const negDiffs = diffs.filter(d => d < 0).map(d => Math.abs(d));
+        const maxUnder = negDiffs.length ? Math.max(...negDiffs) : 0;
+        document.getElementById('summary_diff').innerText = maxUnder > 0 ? '-' + fmt(maxUnder) : '—';
+
+        // Alerts
+        const alerts = document.getElementById('hypo_alerts');
+        if (maxUnder > 0) {
+          const minIdx = diffs.findIndex(v => v < 0);
+          const minDate = data.schedule[minIdx] ? data.schedule[minIdx].date : '—';
+          let msg = `Klient je poistený pod potrebu úverového zostatku. Maximálne "podpoistenie" je ${fmt(maxUnder)} (mesiac ${minDate}).`;
+          if (data.optimized && data.optimized.required_initial) {
+            const recommend = Math.max(0, data.optimized.required_initial - data.schedule[0].insurance);
+            msg += ` Odporúčame navýšiť PS o ${fmt(recommend)}, alebo nastaviť počiatočnú PS na ${fmt(data.optimized.required_initial)}.`;
+          }
+          alerts.innerHTML = '<div style="padding:12px;background:#fff2f2;border:1px solid #f5c2c7;border-radius:4px;color:#842029;">⚠️ ' + msg + '</div>';
+        } else {
+          alerts.innerHTML = '<div style="padding:12px;background:#ecffef;border:1px solid #c7f5d6;border-radius:4px;color:#0f5132;">✅ Poistenie pokrýva zostatok úveru počas celej doby.</div>';
+        }
+
+        // Chart
+        const labels = data.schedule.map(r => r.date);
+        const balance = data.schedule.map(r => r.balance);
+        const insurance = data.schedule.map(r => r.insurance);
+        let optimized = null;
+        if (data.optimized && data.optimized.required_initial) {
+          const init = data.optimized.required_initial;
+          const n = data.schedule.length;
+          optimized = Array.from({length: n}, (_, i) => Math.round(init * Math.max(0, 1 - i/n) * 100) / 100);
+        }
+
+        const ctx = document.getElementById('hypo_chart').getContext('2d');
+        if (hypoChart) hypoChart.destroy();
+        hypoChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: 'Zostatok úveru',
+                data: balance,
+                borderColor: '#c00',
+                tension: 0.2,
+                fill: false,
+                pointRadius: 0
+              },
+              {
+                label: 'Poistná suma pôvodná',
+                data: insurance,
+                borderColor: '#0066cc',
+                tension: 0.2,
+                fill: false,
+                pointRadius: 0
+              },
+              ...(optimized ? [{
+                label: 'PS optimalizovaná',
+                data: optimized,
+                borderColor: '#008000',
+                tension: 0.2,
+                fill: false,
+                pointRadius: 0
+              }] : [])
+            ]
+          },
+          options: {
+            responsive: true,
+            interaction: {mode: 'index', intersect: false},
+            plugins: {
+              legend: {position: 'top'},
+              tooltip: {callbacks: {label: ctx => ctx.dataset.label + ': ' + fmt(ctx.parsed.y)}}
+            },
+            scales: {
+              y: {ticks: {callback: v => fmt(v)}}
+            }
+          }
+        });
+
+        // Table
+        const tbody = document.getElementById('hypo_table_body');
+        tbody.innerHTML = '';
+        data.schedule.slice(0, 50).forEach(row => {
+          const tr = document.createElement('tr');
+          if (row.difference < 0) tr.style.background = '#ffecec';
+          tr.innerHTML = `
+            <td style="padding:6px;border-bottom:1px solid #eee;">${row.month}</td>
+            <td style="padding:6px;border-bottom:1px solid #eee;text-align:right;">${fmt(row.payment)}</td>
+            <td style="padding:6px;border-bottom:1px solid #eee;text-align:right;">${fmt(row.interest)}</td>
+            <td style="padding:6px;border-bottom:1px solid #eee;text-align:right;">${fmt(row.balance)}</td>
+            <td style="padding:6px;border-bottom:1px solid #eee;text-align:right;">${fmt(row.insurance)}</td>
+            <td style="padding:6px;border-bottom:1px solid #eee;text-align:right;color:${row.difference < 0 ? '#c00' : '#008000'};">${fmt(row.difference)}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+
+      // Set default date
+      document.addEventListener('DOMContentLoaded', () => {
+        const el = document.getElementById('first_payment');
+        if (!el.value) {
+          el.value = new Date().toISOString().slice(0, 10);
+        }
+      });
+    </script>
+    """
+    return render_template_string(APP_TEMPLATE, content=content)
+
+
+@app.route("/hypo/calc", methods=["POST"])
+@login_required
+def hypo_calc():
+    try:
+        body = request.get_json() or {}
+        loan_amount = float(body.get('loan_amount', 0))
+        annual_rate = float(body.get('annual_rate', 0))
+        years = int(body.get('years', 0))
+        first_payment_str = body.get('first_payment', '')
+        insurance_sum = float(body.get('insurance_sum', 0))
+        insurance_years = int(body.get('insurance_years', 0))
+        increase_pct = float(body.get('increase_pct', 0) or 0)
+
+        if years <= 0 or loan_amount <= 0:
+            return jsonify({'error': 'Neplatné vstupy (kladné čísla)'}), 400
+
+        # Parse date
+        try:
+            first_payment = datetime.strptime(first_payment_str, '%Y-%m-%d').date()
+        except Exception:
+            first_payment = datetime.now().date()
+
+        monthly = calculate_monthly_payment(loan_amount, annual_rate, years)
+        schedule = generate_amortization_schedule(loan_amount, annual_rate, years, first_payment, insurance_sum, insurance_years, increase_pct)
+        optimized = optimize_insurance_initial(schedule, insurance_years)
+        total_interest = sum(r['interest'] for r in schedule)
+        total_paid = sum(r['payment'] for r in schedule)
+
+        return jsonify({
+            'monthly_payment': round(monthly, 2),
+            'schedule': schedule,
+            'optimized': optimized,
+            'total_interest': round(total_interest, 2),
+            'total_paid': round(total_paid, 2)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def _compute_izp_projection(payload):
+    start_month = int(payload.get('start_month', 5) or 5)
+    start_year = int(payload.get('start_year', 2024) or 2024)
+    end_month = int(payload.get('end_month', 5) or 5)
+    end_year = int(payload.get('end_year', 2045) or 2045)
+
+    total_premium = float(payload.get('total_premium', 100) or 100)
+    saving_part = float(payload.get('saving_part', 50) or 50)
+    first_alloc = float(payload.get('first_alloc_pct', 50) or 50)
+    second_alloc = float(payload.get('second_alloc_pct', 50) or 50)
+
+    collection_fee = float(payload.get('collection_fee', 3) or 0)
+    admin_fee = float(payload.get('admin_fee', 5) or 0)
+    entry_fee_pct = float(payload.get('entry_fee_pct', 5) or 0)
+    surrender_fee_pct = float(payload.get('surrender_fee_pct', 5) or 0)
+    management_fee_pct = float(payload.get('management_fee_pct', 2) or 0)
+    annual_yield_pct = float(payload.get('annual_yield_pct', 8) or 0)
+
+    months = max(12, (end_year - start_year) * 12 + (end_month - start_month) + 1)
+    years = max(1, round(months / 12))
+
+    yearly_rows = []
+    fund_balance = 0.0
+    cum_gross = 0.0
+    cum_invested = 0.0
+    total_fees_paid = 0.0
+
+    monthly_admin = collection_fee + admin_fee
+    monthly_entry = saving_part * (entry_fee_pct / 100.0)
+    monthly_net_saving = max(0.0, saving_part - monthly_entry)
+    monthly_mgmt = management_fee_pct / 100.0 / 12.0
+    monthly_growth = annual_yield_pct / 100.0 / 12.0
+
+    for month_idx in range(1, years * 12 + 1):
+        year_idx = (month_idx - 1) // 12 + 1
+
+        # Jednoduchý alokačný model pre prvé dva roky
+        alloc_factor = 1.0
+        if year_idx == 1:
+            alloc_factor = first_alloc / 100.0
+        elif year_idx == 2:
+            alloc_factor = second_alloc / 100.0
+
+        invested_this_month = monthly_net_saving * alloc_factor
+        cum_gross += saving_part
+        cum_invested += invested_this_month
+
+        fees_this_month = monthly_admin + monthly_entry + (fund_balance * monthly_mgmt)
+        total_fees_paid += fees_this_month
+
+        fund_balance = max(0.0, fund_balance * (1.0 + monthly_growth - monthly_mgmt) + invested_this_month)
+
+        if month_idx % 12 == 0:
+            yearly_rows.append(
+                {
+                    'year': year_idx,
+                    'gross': round(cum_gross, 2),
+                    'invested': round(cum_invested, 2),
+                    'fund': round(fund_balance, 2),
+                }
+            )
+
+    saved_in_izp = cum_gross + fund_balance
+    after_surrender = max(0.0, saved_in_izp * (1.0 - surrender_fee_pct / 100.0))
+
+    summary = {
+        'paid_fees': round(total_fees_paid, 2),
+        'in_funds_more': round(max(0.0, fund_balance - cum_invested), 2),
+        'future_fees': round(monthly_admin * years * 12, 2),
+        'invested_amount': round(cum_invested, 2),
+        'saved_izp': round(saved_in_izp, 2),
+        'after_surrender': round(after_surrender, 2),
+        'fund_end': round(fund_balance, 2),
+        'term_years': years,
+    }
+
+    return {
+        'labels': [f"{row['year']}. r." for row in yearly_rows],
+        'gross_series': [row['gross'] for row in yearly_rows],
+        'invested_series': [row['invested'] for row in yearly_rows],
+        'fund_series': [row['fund'] for row in yearly_rows],
+        'summary': summary,
+    }
+
+
+@app.route("/izp", methods=["GET"])
+@login_required
+def izp():
+    content = """
+    <h2>Investičné životné poistenie</h2>
+
+    <div id="izp_results" style="display:none;">
+      <div class="card" style="padding:12px;margin-bottom:16px;">
+        <h4 style="margin:0 0 10px 0;">Investičné životné poistenie</h4>
+        <div style="max-width:1100px;margin:0 auto;height:420px;">
+          <canvas id="izp_main_chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;">
+      <div class="card" style="padding:12px;">
+        <h4 style="margin:0 0 8px 0;">Detaily zmluvy</h4>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <label>Začiatok zmluvy (mesiac)</label>
+            <input id="start_month" type="number" value="5" min="1" max="12">
+          </div>
+          <div>
+            <label>Začiatok zmluvy (rok)</label>
+            <input id="start_year" type="number" value="2024" min="2000" max="2100">
+          </div>
+          <div>
+            <label>Koniec zmluvy (mesiac)</label>
+            <input id="end_month" type="number" value="5" min="1" max="12">
+          </div>
+          <div>
+            <label>Koniec zmluvy (rok)</label>
+            <input id="end_year" type="number" value="2045" min="2000" max="2100">
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <label>Celkové poistné (€)</label>
+            <input id="total_premium" type="number" value="100" step="1">
+          </div>
+          <div>
+            <label>Sporiaca časť (€)</label>
+            <input id="saving_part" type="number" value="50" step="1">
+          </div>
+        </div>
+
+        <label>Počiatočný poplatok - alokačné %</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <label>1. rok (%)</label>
+            <input id="first_alloc_pct" type="number" value="50" step="0.1">
+          </div>
+          <div>
+            <label>2. rok (%)</label>
+            <input id="second_alloc_pct" type="number" value="50" step="0.1">
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <label>Inkásny poplatok (€)</label>
+            <input id="collection_fee" type="number" value="3" step="0.1">
+          </div>
+          <div>
+            <label>Administratívny poplatok (€)</label>
+            <input id="admin_fee" type="number" value="5" step="0.1">
+          </div>
+          <div>
+            <label>Vstupný/Výstupný/Variabilný (%)</label>
+            <input id="entry_fee_pct" type="number" value="5" step="0.1">
+          </div>
+          <div>
+            <label>Odkupný poplatok (%)</label>
+            <input id="surrender_fee_pct" type="number" value="5" step="0.1">
+          </div>
+          <div>
+            <label>Správcovský poplatok (%)</label>
+            <input id="management_fee_pct" type="number" value="2" step="0.1">
+          </div>
+          <div>
+            <label>Ročný výnos (%)</label>
+            <input id="annual_yield_pct" type="number" value="8" step="0.1">
+          </div>
+        </div>
+
+        <button class="btn" onclick="runIzpCalc()" style="width:100%;margin-top:6px;">Prepočítať</button>
+      </div>
+
+      <div id="izp_summary" style="display:none;gap:12px;">
+        <div class="card" style="padding:12px;">
+          <h4 style="margin:0 0 8px 0;">Výpočet</h4>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div style="border:1px solid #c9c9c9;border-radius:10px;padding:10px;text-align:center;">
+              <div style="font-size:0.85rem;color:#666;">Zaplatené na poplatkoch</div>
+              <div id="sum_paid_fees" style="font-size:1.8rem;font-weight:700;">0 €</div>
+            </div>
+            <div style="border:1px solid #c9c9c9;border-radius:10px;padding:10px;text-align:center;">
+              <div style="font-size:0.85rem;color:#666;">Vo fondoch nasporíte viac o</div>
+              <div id="sum_in_funds_more" style="font-size:1.8rem;font-weight:700;">0 €</div>
+            </div>
+          </div>
+
+          <div style="margin-top:8px;display:grid;gap:6px;">
+            <div style="display:flex;justify-content:space-between;background:#f3f3f3;border-radius:10px;padding:8px 12px;"><span>Budúce poplatky</span><strong id="sum_future_fees">0 €</strong></div>
+            <div style="display:flex;justify-content:space-between;background:#f3f3f3;border-radius:10px;padding:8px 12px;"><span>Investované prostriedky</span><strong id="sum_invested">0 €</strong></div>
+            <div style="display:flex;justify-content:space-between;background:#f3f3f3;border-radius:10px;padding:8px 12px;"><span>Nasporené v IŽP</span><strong id="sum_saved_izp">0 €</strong></div>
+            <div style="display:flex;justify-content:space-between;background:#f3f3f3;border-radius:10px;padding:8px 12px;"><span>Po odrátaní odkup. poplatku</span><strong id="sum_after_surrender">0 €</strong></div>
+            <div style="display:flex;justify-content:space-between;background:#f3f3f3;border-radius:10px;padding:8px 12px;"><span>Nasporené vo fondoch</span><strong id="sum_fund_end">0 €</strong></div>
+          </div>
+        </div>
+
+        <div class="card" style="padding:12px;">
+          <h4 style="margin:0 0 8px 0;">Sporenie</h4>
+          <div style="font-size:0.9rem;color:#666;">Prehľad je orientačný a určený na porovnanie poplatkov a investovania v čase.</div>
+          <div id="izp_alerts" style="margin-top:8px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+      let izpChart = null;
+
+      function eur(v){
+        return Number(v || 0).toLocaleString('sk-SK', {style:'currency', currency:'EUR'});
+      }
+
+      function gatherIzpPayload(){
+        const ids = [
+          'start_month','start_year','end_month','end_year','total_premium','saving_part',
+          'first_alloc_pct','second_alloc_pct','collection_fee','admin_fee','entry_fee_pct',
+          'surrender_fee_pct','management_fee_pct','annual_yield_pct'
+        ];
+        const out = {};
+        ids.forEach((id)=>{
+          out[id] = parseFloat(document.getElementById(id).value || 0);
+        });
+        return out;
+      }
+
+      function fillSummary(summary){
+        // Show results section
+        document.getElementById('izp_results').style.display = 'block';
+        document.getElementById('izp_summary').style.display = 'grid';
+        
+        document.getElementById('sum_paid_fees').innerText = eur(summary.paid_fees);
+        document.getElementById('sum_in_funds_more').innerText = eur(summary.in_funds_more);
+        document.getElementById('sum_future_fees').innerText = eur(summary.future_fees);
+        document.getElementById('sum_invested').innerText = eur(summary.invested_amount);
+        document.getElementById('sum_saved_izp').innerText = eur(summary.saved_izp);
+        document.getElementById('sum_after_surrender').innerText = eur(summary.after_surrender);
+        document.getElementById('sum_fund_end').innerText = eur(summary.fund_end);
+      }
+
+      function drawIzpChart(data){
+        const ctx = document.getElementById('izp_main_chart').getContext('2d');
+        if(izpChart) izpChart.destroy();
+
+        izpChart = new Chart(ctx, {
+          type:'line',
+          data:{
+            labels:data.labels,
+            datasets:[
+              {
+                label:'Celkovo poistné',
+                data:data.gross_series,
+                borderColor:'#15a8ff',
+                backgroundColor:'rgba(21,168,255,0.10)',
+                fill:true,
+                pointRadius:0,
+                tension:0.25
+              },
+              {
+                label:'Nasporené vo fondoch',
+                data:data.fund_series,
+                borderColor:'#3d5afe',
+                backgroundColor:'rgba(61,90,254,0.08)',
+                fill:true,
+                pointRadius:0,
+                tension:0.25
+              },
+              {
+                label:'Investované prostriedky',
+                data:data.invested_series,
+                borderColor:'#444',
+                fill:false,
+                pointRadius:0,
+                tension:0.20
+              }
+            ]
+          },
+          options:{
+            responsive:true,
+            maintainAspectRatio:true,
+            aspectRatio:2.4,
+            interaction:{mode:'index',intersect:false},
+            plugins:{
+              legend:{position:'top'},
+              tooltip:{callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${eur(ctx.parsed.y)}`}}
+            },
+            scales:{
+              y:{ticks:{callback:(v)=>eur(v)}}
+            }
+          }
+        });
+      }
+
+      async function runIzpCalc(){
+        const payload = gatherIzpPayload();
+        const alerts = document.getElementById('izp_alerts');
+        alerts.innerHTML = '';
+
+        try{
+          const res = await fetch('/izp/calc', {
+            method:'POST',
+            credentials:'same-origin',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(payload)
+          });
+
+          const data = await res.json();
+          if(!res.ok){
+            alerts.innerHTML = `<div class="error">⚠️ ${data.error || 'Výpočet zlyhal.'}</div>`;
+            return;
+          }
+
+          fillSummary(data.summary);
+          drawIzpChart(data);
+
+          const netGain = Number(data.summary.fund_end || 0) - Number(data.summary.invested_amount || 0);
+          if(netGain >= 0){
+            alerts.innerHTML = `<div style="padding:8px;border-radius:8px;background:#ecffef;border:1px solid #c7f5d6;color:#0f5132;">✅ Odhadované zhodnotenie je ${eur(netGain)}.</div>`;
+          } else {
+            alerts.innerHTML = `<div style="padding:8px;border-radius:8px;background:#fff2f2;border:1px solid #f5c2c7;color:#842029;">⚠️ Odhadované zhodnotenie je záporné (${eur(netGain)}). Skontrolujte parametre poplatkov alebo výnosu.</div>`;
+          }
+        } catch(err){
+          alerts.innerHTML = `<div class="error">⚠️ Chyba pripojenia: ${err.message}</div>`;
+        }
+      }
+    </script>
+    """
+    return render_template_string(APP_TEMPLATE, content=content)
+
+
+@app.route("/izp/calc", methods=["POST"])
+@login_required
+def izp_calc():
+    try:
+        payload = request.get_json() or {}
+        result = _compute_izp_projection(payload)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 
 if __name__ == "__main__":

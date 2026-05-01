@@ -1,3 +1,25 @@
+# HypoVSPoitná suma
+
+FastAPI aplikácia pre výpočet hypotekárneho úveru a klesajúcej poistnej sumy.
+
+Spustenie (virtuálne prostredie odporúčané):
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+# default (port 8000)
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Potom otvorte http://127.0.0.1:8000/ alebo ak beží v kontajneri použite host/vm adresu.
+
+Spustenie pomocou pomocného skriptu `run.sh` a vlastného portu:
+
+```bash
+# spustiť na porte 8080
+PORT=8080 ./run.sh
+```
 ProHypo Asistent
 
 Tato aplikacia funguje lokalne bez GitHub uctu a bez prihlasenia do GitHubu.
