@@ -16,18 +16,15 @@ app = Flask(__name__)
 app.secret_key = "prohypo-secret"
 FAQ_FILE_PATH = Path(__file__).resolve().parent / "data" / "faq_items.json"
 INTERESTING_NUMBERS_FILE_PATH = Path(__file__).resolve().parent / "data" / "zaujimave_cisla.json"
-
 # Heslo na vstup do aplikácie - môžete ho zmeniť
 APP_PASSWORD = "0000"
-
 def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if session.get('logged_in') is not True:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
-
+  @wraps(f)
+  def decorated_function(*args, **kwargs):
+    if session.get('logged_in') is not True:
+      return redirect(url_for('login'))
+    return f(*args, **kwargs)
+  return decorated_function
 APP_TEMPLATE = """<!doctype html>
 <html lang="sk">
 <head>
@@ -35,7 +32,7 @@ APP_TEMPLATE = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ProHypo Asistent </title>
   <style>
-    body{font-family:Segoe UI,Arial,sans-serif;background:#f0f6fc;color:#1a2e5a;margin:0;padding:0;overflow-x:hidden;}
+    body{font-family:Segoe UI,Arial,sans-serif;background:#f0f6fc;color:#1a2e5a;margin:0;padding:0;}
     .app-wrapper{display:flex;min-height:100vh;gap:0;}
     .sidebar{width:200px;background:#fff;border-right:1px solid #ddd;padding:16px 0;box-shadow:2px 0 8px rgba(0,0,0,.08);}
     .nav{display:flex;flex-direction:column;gap:2px;padding:0;margin:0;}
@@ -125,6 +122,7 @@ APP_TEMPLATE = """<!doctype html>
       <a href="{{ url_for('hypo') }}">🏦 Hypo VS Poistná suma</a>
       <a href="{{ url_for('izp') }}">📊 IŽP</a>
       <a href="{{ url_for('rzp') }}">🛡️ RŽP</a>
+      <a href="{{ url_for('tnu') }}">💉 TNU</a>
       <a href="{{ url_for('najcastejsie_otazky') }}">❓ FAQ</a>
       <a href="{{ url_for('zaujimave_cisla') }}">📈 Čísla</a>
       <a href="{{ url_for('logout') }}">🚪 Odhlásiť sa</a>
@@ -3188,6 +3186,359 @@ def izp_calc():
     try:
         payload = request.get_json() or {}
         result = _compute_izp_projection(payload)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
+# ====== TNU - Trvalé následky úrazu ======
+
+def calculate_tnu_price(insurer, invalid_pct, ps, kooperativa_option=None):
+    """Výpočet ceny TNU podľa poisťovne a percenta invalidity"""
+    pct = float(invalid_pct)
+    ps = float(ps)
+    
+    if insurer == "allianz":
+        if pct <= 20:
+            return (pct * ps) / 100
+        elif pct <= 40:
+            return ((4 * pct - 60) * ps) / 100
+        elif pct <= 60:
+            return ((6 * pct - 140) * ps) / 100
+        elif pct <= 70:
+            return ((8 * pct - 260) * ps) / 100
+        elif pct <= 80:
+            return ((10 * pct - 400) * ps) / 100
+        elif pct <= 90:
+            return ((13 * pct - 640) * ps) / 100
+        else:
+            return ((17 * pct - 1000) * ps) / 100
+    
+    elif insurer == "generali":
+        if pct <= 10:
+            return (pct * ps) / 100
+        elif pct <= 20:
+            return ((2 * pct - 10) * ps) / 100
+        elif pct <= 40:
+            return ((4 * pct - 50) * ps) / 100
+        elif pct <= 70:
+            return ((10 * pct - 290) * ps) / 100
+        elif pct <= 80:
+            return ((16 * pct - 640) * ps) / 100
+        else:
+            return ((18 * pct - 800) * ps) / 100
+    
+    elif insurer == "kooperativa":
+        # Kooperativa má 2 možnosti (350% a 500%)
+        if kooperativa_option == "350":
+            if pct <= 25:
+                return (pct * ps) / 100
+
+            table_350 = {
+                25: 25,
+                30: 40,
+                35: 55,
+                40: 70,
+                45: 85,
+                50: 100,
+                55: 125,
+                60: 150,
+                65: 175,
+                70: 200,
+                75: 225,
+                80: 250,
+                85: 275,
+                90: 300,
+                95: 325,
+                100: 350,
+            }
+            sorted_keys = sorted(table_350.keys())
+            if pct in table_350:
+                return (table_350[pct] * ps) / 100
+            for i in range(len(sorted_keys) - 1):
+                k1, k2 = sorted_keys[i], sorted_keys[i + 1]
+                if k1 < pct < k2:
+                    v1, v2 = table_350[k1], table_350[k2]
+                    interpolated = v1 + (v2 - v1) * (pct - k1) / (k2 - k1)
+                    return (interpolated * ps) / 100
+            if pct > sorted_keys[-1]:
+                return (table_350[sorted_keys[-1]] * ps) / 100
+            return (pct * ps) / 100
+        else:  # 500%
+            table_500 = {
+                25: 25, 30: 50, 35: 75, 40: 100, 45: 125, 50: 150, 55: 185, 60: 220,
+                65: 255, 70: 290, 75: 325, 80: 360, 85: 395, 90: 430, 95: 465, 100: 500
+            }
+            sorted_keys = sorted(table_500.keys())
+            if pct in table_500:
+                return (table_500[pct] * ps) / 100
+            for i in range(len(sorted_keys) - 1):
+                k1, k2 = sorted_keys[i], sorted_keys[i + 1]
+                if k1 < pct < k2:
+                    v1, v2 = table_500[k1], table_500[k2]
+                    interpolated = v1 + (v2 - v1) * (pct - k1) / (k2 - k1)
+                    return (interpolated * ps) / 100
+            if pct < sorted_keys[0]:
+              return (pct * ps) / 100
+            return (table_500[sorted_keys[-1]] * ps) / 100
+    
+    elif insurer == "nn":
+        # NN tabuľka progresívneho plnenia
+        nn_table = {
+        1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10,
+        11: 11, 12: 12, 13: 13, 14: 14, 15: 16, 16: 18, 17: 20, 18: 22, 19: 24, 20: 26,
+        21: 30, 22: 34, 23: 38, 24: 42, 25: 46, 26: 50, 27: 54, 28: 58, 29: 62, 30: 66,
+        31: 70, 32: 74, 33: 78, 34: 82, 35: 86, 36: 91, 37: 96, 38: 101, 39: 106, 40: 111,
+        41: 117, 42: 123, 43: 129, 44: 135, 45: 141, 46: 147, 47: 153, 48: 159, 49: 165, 50: 171,
+        51: 177, 52: 183, 53: 189, 54: 195, 55: 207, 56: 219, 57: 231, 58: 243, 59: 255, 60: 267,
+        61: 279, 62: 291, 63: 303, 64: 315, 65: 327, 66: 339, 67: 351, 68: 363, 69: 375, 70: 387,
+        71: 399, 72: 411, 73: 423, 74: 435, 75: 447, 76: 459, 77: 471, 78: 483, 79: 503, 80: 523,
+        81: 543, 82: 563, 83: 583, 84: 603, 85: 623, 86: 643, 87: 663, 88: 683, 89: 703, 90: 723,
+        91: 751, 92: 779, 93: 807, 94: 835, 95: 863, 96: 891, 97: 919, 98: 947, 99: 975, 100: 1000
+        }
+        if pct in nn_table:
+            return (nn_table[pct] * ps) / 100
+        return 0
+    
+    elif insurer == "csob":
+        if pct <= 20:
+            return (pct * ps) / 100
+        elif pct <= 40:
+            return ((pct * 3 - 40) * ps) / 100
+        elif pct <= 60:
+            return ((pct * 7 - 200) * ps) / 100
+        elif pct <= 80:
+            return ((pct * 8 - 260) * ps) / 100
+        elif pct <= 100:
+            return ((pct * 11 - 500) * ps) / 100
+        else:
+            return (750 * ps) / 100
+    
+    elif insurer == "uniqa":
+        # UNIQA má 2 možnosti (500% a 1000%)
+        if kooperativa_option == "1000":
+            uniqa_1000 = {
+                1: 1, 2: 2, 3: 3, 4: 4, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 15,
+                11: 16, 12: 17, 13: 18, 14: 20, 15: 22, 16: 24, 17: 26, 18: 28, 19: 30, 20: 32,
+                21: 42, 22: 44, 23: 46, 24: 48, 25: 50, 26: 56, 27: 62, 28: 66, 29: 70, 30: 75,
+                35: 95, 40: 130, 45: 170, 50: 255, 55: 275, 60: 300, 65: 325, 70: 400, 75: 450,
+                80: 550, 85: 620, 90: 700, 95: 800, 100: 1000
+            }
+            sorted_keys = sorted(uniqa_1000.keys())
+            if pct in uniqa_1000:
+                return (uniqa_1000[pct] * ps) / 100
+            for i in range(len(sorted_keys) - 1):
+                k1, k2 = sorted_keys[i], sorted_keys[i + 1]
+                if k1 <= pct < k2:
+                    v1, v2 = uniqa_1000[k1], uniqa_1000[k2]
+                    interpolated = v1 + (v2 - v1) * (pct - k1) / (k2 - k1)
+                    return (interpolated * ps) / 100
+            return (uniqa_1000[100] * ps) / 100
+        else:  # 500%
+            uniqa_500 = {
+                1: 1, 2: 2, 3: 3, 4: 4, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 12,
+                11: 14, 12: 16, 13: 18, 14: 20, 15: 22, 16: 24, 17: 25, 18: 27, 19: 28, 20: 30,
+                21: 31, 22: 33, 23: 34, 24: 36, 25: 37, 26: 41, 27: 44, 28: 48, 29: 58, 30: 60,
+                35: 110, 40: 160, 45: 230, 50: 315, 55: 360, 60: 400, 65: 440, 70: 470, 75: 500,
+                80: 500, 85: 500, 90: 500, 95: 500, 100: 500
+            }
+            sorted_keys = sorted(uniqa_500.keys())
+            if pct in uniqa_500:
+                return (uniqa_500[pct] * ps) / 100
+            for i in range(len(sorted_keys) - 1):
+                k1, k2 = sorted_keys[i], sorted_keys[i + 1]
+                if k1 <= pct < k2:
+                    v1, v2 = uniqa_500[k1], uniqa_500[k2]
+                    interpolated = v1 + (v2 - v1) * (pct - k1) / (k2 - k1)
+                    return (interpolated * ps) / 100
+            return (uniqa_500[100] * ps) / 100
+    
+    elif insurer == "wdobrom":
+        # Wüstenrot progresívna tabuľka
+        wdobrom_table = {
+        1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 12,
+        11: 13, 12: 14, 13: 15, 14: 16, 15: 17, 16: 18, 17: 19, 18: 20, 19: 21, 20: 22,
+        21: 42, 22: 44, 23: 46, 24: 48, 25: 50, 26: 52, 27: 54, 28: 56, 29: 58, 30: 60,
+        31: 62, 32: 64, 33: 66, 34: 68, 35: 70, 36: 72, 37: 74, 38: 76, 39: 78, 40: 120,
+        41: 123, 42: 126, 43: 129, 44: 132, 45: 135, 46: 138, 47: 141, 48: 144, 49: 147, 50: 175,
+        51: 178.5, 52: 182, 53: 185.5, 54: 189, 55: 220, 56: 224, 57: 228, 58: 232, 59: 236, 60: 360,
+        61: 366, 62: 372, 63: 378, 64: 384, 65: 390, 66: 396, 67: 402, 68: 408, 69: 414, 70: 420,
+        71: 426, 72: 432, 73: 438, 74: 444, 75: 450, 76: 456, 77: 462, 78: 468, 79: 474, 80: 640,
+        81: 648, 82: 656, 83: 664, 84: 672, 85: 680, 86: 688, 87: 696, 88: 704, 89: 712, 90: 720,
+        91: 728, 92: 736, 93: 744, 94: 752, 95: 760, 96: 768, 97: 776, 98: 784, 99: 792, 100: 800
+        }
+        sorted_keys = sorted(wdobrom_table.keys())
+        if pct in wdobrom_table:
+            return (wdobrom_table[pct] * ps) / 100
+        for i in range(len(sorted_keys) - 1):
+            k1, k2 = sorted_keys[i], sorted_keys[i + 1]
+            if k1 <= pct < k2:
+                v1, v2 = wdobrom_table[k1], wdobrom_table[k2]
+                interpolated = v1 + (v2 - v1) * (pct - k1) / (k2 - k1)
+                return (interpolated * ps) / 100
+        return (wdobrom_table[100] * ps) / 100
+    
+    return 0
+
+
+@app.route("/tnu", methods=["GET"])
+@login_required
+def tnu():
+    content = """
+    <h2>Trvalé následky úrazu (TNU)</h2>
+    
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;margin-bottom:14px;width:100%;">
+      <div class="card" style="padding:16px 18px;min-width:280px;flex:0 0 280px;">
+        <label style="display:block;margin-bottom:8px;font-weight:600;">Poistná suma (€)</label>
+        <input id="tnu_ps" type="number" value="10000" min="1000" step="100" onchange="runTnuCalc()" style="font-size:1.05rem;padding:12px 14px;min-width:220px;">
+      </div>
+      <div class="card" style="padding:16px 18px;flex:1 1 100%;min-width:320px;width:100%;">
+        <button type="button" class="btn" onclick="toggleTnuFilters()" style="margin-bottom:10px;">Vybrať poisťovne</button>
+        <div id="tnuFilterPanel" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;width:100%;">
+          <label style="display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid #dbe3ea;border-radius:999px;background:#fff;cursor:pointer;"><input type="checkbox" checked data-tnu-filter="allianz"><span>Allianz</span></label>
+          <label style="display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid #dbe3ea;border-radius:999px;background:#fff;cursor:pointer;"><input type="checkbox" checked data-tnu-filter="generali"><span>Generáli</span></label>
+          <label style="display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid #dbe3ea;border-radius:999px;background:#fff;cursor:pointer;"><input type="checkbox" checked data-tnu-filter="kooperativa_350"><span>Koop 350%</span></label>
+          <label style="display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid #dbe3ea;border-radius:999px;background:#fff;cursor:pointer;"><input type="checkbox" checked data-tnu-filter="kooperativa_500"><span>Koop 500%</span></label>
+          <label style="display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid #dbe3ea;border-radius:999px;background:#fff;cursor:pointer;"><input type="checkbox" checked data-tnu-filter="nn"><span>NN</span></label>
+          <label style="display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid #dbe3ea;border-radius:999px;background:#fff;cursor:pointer;"><input type="checkbox" checked data-tnu-filter="csob"><span>ČSOB</span></label>
+          <label style="display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid #dbe3ea;border-radius:999px;background:#fff;cursor:pointer;"><input type="checkbox" checked data-tnu-filter="uniqa_500"><span>UNIQA 500%</span></label>
+          <label style="display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid #dbe3ea;border-radius:999px;background:#fff;cursor:pointer;"><input type="checkbox" checked data-tnu-filter="uniqa_1000"><span>UNIQA 1000%</span></label>
+          <label style="display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid #dbe3ea;border-radius:999px;background:#fff;cursor:pointer;"><input type="checkbox" checked data-tnu-filter="wdobrom"><span>Wüstenrot</span></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="padding:14px;border:1px solid #d9e1ea;border-radius:16px;box-shadow:0 4px 18px rgba(15, 23, 42, 0.05);max-width:none;overflow:hidden;">
+      <div style="overflow-x:auto;width:100%;">
+        <table id="tnuTable" style="width:100%;min-width:1200px;border-collapse:collapse;font-size:0.9rem;">
+          <thead>
+            <tr style="background:#62c7f2;color:#00324f;border:1px solid #999;">
+              <th style="padding:8px;text-align:center;width:50px;">TNU (%)</th>
+              <th style="padding:8px;text-align:right;" data-tnu-insurer="allianz">Allianz</th>
+              <th style="padding:8px;text-align:right;" data-tnu-insurer="generali">Generáli</th>
+              <th style="padding:8px;text-align:right;" data-tnu-insurer="kooperativa_350">Koop 350%</th>
+              <th style="padding:8px;text-align:right;" data-tnu-insurer="kooperativa_500">Koop 500%</th>
+              <th style="padding:8px;text-align:right;" data-tnu-insurer="nn">NN</th>
+              <th style="padding:8px;text-align:right;" data-tnu-insurer="csob">ČSOB</th>
+              <th style="padding:8px;text-align:right;" data-tnu-insurer="uniqa_500">UNIQA 500%</th>
+              <th style="padding:8px;text-align:right;" data-tnu-insurer="uniqa_1000">UNIQA 1000%</th>
+              <th style="padding:8px;text-align:right;" data-tnu-insurer="wdobrom">Wüstenrot</th>
+            </tr>
+          </thead>
+          <tbody id="tnu_table_body">
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      function toggleTnuFilters() {
+        const panel = document.getElementById('tnuFilterPanel');
+        if (!panel) return;
+        panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+      }
+
+      function syncTnuColumnVisibility() {
+        const selected = new Set();
+        document.querySelectorAll('#tnuFilterPanel input[type="checkbox"][data-tnu-filter]').forEach((checkbox) => {
+          if (checkbox.checked) selected.add(checkbox.dataset.tnuFilter);
+        });
+
+        document.querySelectorAll('#tnuTable [data-tnu-insurer]').forEach((cell) => {
+          cell.style.display = selected.has(cell.dataset.tnuInsurer) ? '' : 'none';
+        });
+      }
+
+      async function runTnuCalc() {
+        const ps = parseFloat(document.getElementById('tnu_ps').value);
+        
+        if (!ps || ps < 1000) {
+          document.getElementById('tnu_table_body').innerHTML = '<tr><td colspan="10" style="padding:20px;text-align:center;color:#999;">Zadaj poistnu sumu</td></tr>';
+          return;
+        }
+
+        try {
+          const response = await fetch('/tnu/calc', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ps: ps })
+          });
+          
+          const data = await response.json();
+          fillTnuTable(data);
+        } catch (error) {
+          document.getElementById('tnu_table_body').innerHTML = '<tr><td colspan="10" style="padding:20px;text-align:center;color:#c00;">Chyba: ' + error.message + '</td></tr>';
+        }
+      }
+
+      function fillTnuTable(data) {
+        const tbody = document.getElementById('tnu_table_body');
+        tbody.innerHTML = '';
+        
+        for (let pct = 1; pct <= 100; pct++) {
+          const row = document.createElement('tr');
+          row.style.borderBottom = '1px solid #ddd';
+          row.style.backgroundColor = (pct % 5 === 0) ? '#f9f9f9' : '#fff';
+          
+          row.innerHTML = '<td style="padding:6px 8px;text-align:center;font-weight:600;">' + pct + '%</td>' +
+                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="allianz">' + Number(data.allianz[pct] || 0).toFixed(0) + '</td>' +
+                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="generali">' + Number(data.generali[pct] || 0).toFixed(0) + '</td>' +
+                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="kooperativa_350">' + Number(data.kooperativa_350[pct] || 0).toFixed(0) + '</td>' +
+                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="kooperativa_500">' + Number(data.kooperativa_500[pct] || 0).toFixed(0) + '</td>' +
+                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="nn">' + Number(data.nn[pct] || 0).toFixed(0) + '</td>' +
+                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="csob">' + Number(data.csob[pct] || 0).toFixed(0) + '</td>' +
+                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="uniqa_500">' + Number(data.uniqa_500[pct] || 0).toFixed(0) + '</td>' +
+                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="uniqa_1000">' + Number(data.uniqa_1000[pct] || 0).toFixed(0) + '</td>' +
+                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="wdobrom">' + Number(data.wdobrom[pct] || 0).toFixed(0) + '</td>';
+          tbody.appendChild(row);
+        }
+        syncTnuColumnVisibility();
+      }
+
+      // Spustí výpočet pri načítaní stránky
+      window.addEventListener('load', () => {
+        document.querySelectorAll('#tnuFilterPanel input[type="checkbox"][data-tnu-filter]').forEach((checkbox) => {
+          checkbox.addEventListener('change', syncTnuColumnVisibility);
+        });
+        syncTnuColumnVisibility();
+        runTnuCalc();
+      });
+    </script>
+    """
+    return render_template_string(APP_TEMPLATE, content=content)
+
+
+@app.route("/tnu/calc", methods=["POST"])
+@login_required
+def tnu_calc():
+    try:
+        payload = request.get_json() or {}
+        ps = float(payload.get('ps', 10000))
+        
+        result = {
+            'allianz': {},
+            'generali': {},
+            'kooperativa_350': {},
+            'kooperativa_500': {},
+            'nn': {},
+            'csob': {},
+            'uniqa_500': {},
+            'uniqa_1000': {},
+            'wdobrom': {},
+        }
+        
+        # Vytvori tabuľku pre každé percento od 1 do 100
+        for pct in range(1, 101):
+            result['allianz'][pct] = calculate_tnu_price('allianz', pct, ps)
+            result['generali'][pct] = calculate_tnu_price('generali', pct, ps)
+            result['kooperativa_350'][pct] = calculate_tnu_price('kooperativa', pct, ps, '350')
+            result['kooperativa_500'][pct] = calculate_tnu_price('kooperativa', pct, ps, '500')
+            result['nn'][pct] = calculate_tnu_price('nn', pct, ps)
+            result['csob'][pct] = calculate_tnu_price('csob', pct, ps)
+            result['uniqa_500'][pct] = calculate_tnu_price('uniqa', pct, ps, '500')
+            result['uniqa_1000'][pct] = calculate_tnu_price('uniqa', pct, ps, '1000')
+            result['wdobrom'][pct] = calculate_tnu_price('wdobrom', pct, ps)
+        
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
