@@ -763,7 +763,7 @@ def hypo():
         <div class="card" style="padding:16px;">
           <h4 style="margin-top:0;">Vstupné údaje</h4>
           <label><strong>Výška úveru (€)</strong></label>
-          <input type="number" id="loan_amount" value="Zadaj výšku úveru" step="1000">
+          <input type="number" id="loan_amount" value="" placeholder="Zadaj výšku úveru" step="1000">
           <label><strong>Ročná úroková sadzba (%)</strong></label>
           <input type="number" id="annual_rate" value="3.8" step="0.1">
           <label><strong>Doba splácania (roky)</strong></label>
@@ -880,7 +880,7 @@ def hypo():
         // Summary cards
         const last = data.schedule[data.schedule.length - 1];
         document.getElementById('summary_balance').innerText = fmt(data.schedule[0].balance);
-        document.getElementById('summary_insurance').innerText = fmt(data.schedule[0].insurance);
+        document.getElementById('summary_insurance').innerText = fmt(data.schedule[0].insurance_total || data.schedule[0].insurance);
         
         const diffs = data.schedule.map(r => r.difference);
         const negDiffs = diffs.filter(d => d < 0).map(d => Math.abs(d));
@@ -2778,6 +2778,7 @@ def hypo_calc():
         insurance_sum = float(body.get('insurance_sum', 0))
         insurance_years = int(body.get('insurance_years', 0))
         increase_pct = float(body.get('increase_pct', 0) or 0)
+        constant_insurance = float(body.get('constant_insurance', 0) or 0)
 
         if years <= 0 or loan_amount <= 0:
             return jsonify({'error': 'Neplatné vstupy (kladné čísla)'}), 400
@@ -2789,7 +2790,16 @@ def hypo_calc():
             first_payment = datetime.now().date()
 
         monthly = calculate_monthly_payment(loan_amount, annual_rate, years)
-        schedule = generate_amortization_schedule(loan_amount, annual_rate, years, first_payment, insurance_sum, insurance_years, increase_pct)
+        schedule = generate_amortization_schedule(
+          loan_amount,
+          annual_rate,
+          years,
+          first_payment,
+          insurance_sum,
+          insurance_years,
+          increase_pct,
+          constant_insurance
+        )
         optimized = optimize_insurance_initial(schedule, insurance_years)
         total_interest = sum(r['interest'] for r in schedule)
         total_paid = sum(r['payment'] for r in schedule)
