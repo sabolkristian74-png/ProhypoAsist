@@ -43,6 +43,7 @@ def generate_amortization_schedule(
     insurance_initial: float,
     insurance_years: int,
     increase_pct: float = 0.0,
+    constant_insurance: float = 0.0,
 ) -> List[Dict]:
     """Generate amortization schedule with insurance progression.
 
@@ -73,12 +74,16 @@ def generate_amortization_schedule(
 
         # insurance decreases linearly to 0 over insurance_months
         if insurance_months == 0:
-            insurance = 0.0
+            base_insurance = 0.0
         else:
             factor = max(0.0, 1.0 - (m / insurance_months))
-            insurance = insurance_initial * factor
+            base_insurance = insurance_initial * factor
 
-        diff = insurance - balance
+        # add constant insurance (flat amount) to the base insurance
+        const_ins = float(constant_insurance or 0.0)
+        insurance_total = base_insurance + const_ins
+
+        diff = insurance_total - balance
 
         schedule.append(
             {
@@ -88,7 +93,9 @@ def generate_amortization_schedule(
                 "interest": round(interest, 2),
                 "principal": round(principal, 2),
                 "balance": round(balance, 2),
-                "insurance": round(insurance, 2),
+                "insurance": round(base_insurance, 2),
+                "constant_insurance": round(const_ins, 2),
+                "insurance_total": round(insurance_total, 2),
                 "difference": round(diff, 2),
             }
         )
