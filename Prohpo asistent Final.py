@@ -12,6 +12,48 @@ from calculations.hypo import (
     optimize_insurance_initial,
 )
 
+"""
+================================================================================
+   PROHYPO ASISTENT - APLIKAČNÁ ŠTRUKTÚRA
+================================================================================
+
+MODULY V APLIKÁCII:
+  1. HYPO (Hypotéka) - riadky 757-2769
+     - Route GET /hypo: Zobrazenie rozhrania      (riadok 757)
+     - Route POST /hypo/calc: Výpočty             (riadok 2770)
+     - Výpočtové funkcie: calculations/hypo.py
+
+  2. RŽP (Rizikové Životné Poistenie) - riadky 1013-2769
+     - Route GET /rzp: Tabuľka produktov poisťovní (riadok 1013)
+     - Bez backend výpočtov, čisto informatívny modul
+
+  3. IZP (Investičné Životné Poistenie) - riadky 2942-3385
+     - Route GET /izp: Zobrazenie rozhrania        (riadok 2942)
+     - Route POST /izp/calc: Výpočty               (riadok 3186)
+     - Funkcia calculate_tnu_price() používaná aj tu
+
+  4. TNU (Trvalé Následky Úrazu) - riadky 3199-3576
+     - Funkcia calculate_tnu_price: Hlavný výpočet (riadok 3199)
+     - Route GET /tnu: Zobrazenie rozhrania        (riadok 3387)
+     - Route POST /tnu/calc: Výpočty               (riadok 3535)
+
+OSTATNÉ ROUTES:
+  - /login: Prihlasovanie (riadok 263)
+  - /logout: Odhlasovanie (riadok 315)
+  - /: Domovská stránka (riadok 322)
+  - /notice: Výpočet notifikačnej lehoty (riadok 344)
+  - /email, /vypocetny_email, /vystupny_mail: Email generátor (riadky 381-602)
+  - /backoffice: Správa FAQ a čísel (riadok 603)
+  - /najcastejsie_otazky: FAQ (riadok 692)
+  - /zaujimave_cisla: Zaujímavé čísla (riadok 731)
+
+HTML TEMPLATE:
+  - APP_TEMPLATE: Globálny HTML template (riadok 28+)
+    Obsahuje SideBar, CSS štýly a globálny JS
+
+================================================================================
+"""
+
 app = Flask(__name__)
 app.secret_key = "prohypo-secret"
 FAQ_FILE_PATH = Path(__file__).resolve().parent / "data" / "faq_items.json"
@@ -756,6 +798,13 @@ def zaujimave_cisla():
 
 @app.route("/hypo", methods=["GET"])
 @login_required
+# ============================================================================
+# HYPO MODULE - Hypotéka (Mortgage Calculation)
+# Výpočet mesačnej splátky, amortizačného plánu a optimalizácia poistenia
+# Route: /hypo - Zobrazenie rozhrania
+# Route: /hypo/calc - Backend výpočty (riadok ~2812)
+# Funkcie: calculations/hypo.py
+# ============================================================================
 def hypo():
     content = """
     <h2>Hypotekárna kalkulačka - Hypo VS Poistná suma</h2>
@@ -1012,6 +1061,11 @@ def hypo():
 
 @app.route("/rzp", methods=["GET"])
 @login_required
+# ============================================================================
+# RŽP MODULE - Rizikové Životné Poistenie (Life Insurance Comparison)
+# Zobrazuje tabuľku s produktmi všetkých poisťovní a ich vlastnosťami
+# Bez backend výpočtov - čisto informatívny modul
+# ============================================================================
 def rzp():
   insurers = [
     {"slug": "allianz", "brand": "Allianz", "product": "Šťastný život", "sub": "Slovenská poisťovňa"},
@@ -2769,6 +2823,15 @@ def rzp():
 
 @app.route("/hypo/calc", methods=["POST"])
 @login_required
+# ============================================================================
+# HYPO BACKEND VÝPOČTY
+# Odoslané parametre: výška pôžičky, úroková sadzba, doba splácania
+# Vracia: mesačnú splátku, amortizačný plán, optimalizáciu poistenia
+# Používa funkcie z calculations/hypo.py:
+#   - calculate_monthly_payment()
+#   - generate_amortization_schedule()
+#   - optimize_insurance_initial()
+# ============================================================================
 def hypo_calc():
     try:
         body = request.get_json() or {}
@@ -2941,6 +3004,12 @@ def _compute_izp_projection(payload):
 
 @app.route("/izp", methods=["GET"])
 @login_required
+# ============================================================================
+# IZP MODULE - Investičné Životné Poistenie (Investment Life Insurance)
+# Výpočet budúcej hodnoty s rôznymi investičnými stratégiami
+# Route: /izp - Zobrazenie rozhrania
+# Route: /izp/calc - Backend výpočty (riadok ~3228)
+# ============================================================================
 def izp():
     content = """
     <h2>Investičné životné poistenie</h2>
@@ -3185,6 +3254,12 @@ def izp():
 
 @app.route("/izp/calc", methods=["POST"])
 @login_required
+# ============================================================================
+# IZP BACKEND VÝPOČTY
+# Odoslané parametre: počiatočný vklad, ročný príspevok, doba, úroveň výnosu
+# Vracia: budúcu hodnotu investície s rôznymi scenármi (pesimista, realist, optimista)
+# Kalkuluje sieť bez poplatkov a s poplatkami
+# ============================================================================
 def izp_calc():
     try:
         payload = request.get_json() or {}
@@ -3195,6 +3270,20 @@ def izp_calc():
 
 
 # ====== TNU - Trvalé následky úrazu ======
+
+
+# ============================================================================
+# VÝPOČTOVÁ FUNKCIA PRE TNU MODUL
+# ============================================================================
+# calculate_tnu_price(insurer, invalid_pct, ps, kooperativa_option)
+# Výpočet ceny TNU (Trvalé Následky Úrazu) podľa poisťovne
+# Parametre:
+#  - insurer: Názov poisťovne (allianz, generali, kooperativa, nn, csob, uniqa, wdobrom)
+#  - invalid_pct: Percento invalidity (0-100%)
+#  - ps: Poistná suma v €
+#  - kooperativa_option: Typ Kooperativy ('350' alebo '500' garantia)
+# Vracia: Cena poistného v € (float)
+# ============================================================================
 
 def calculate_tnu_price(insurer, invalid_pct, ps, kooperativa_option=None):
     """Výpočet ceny TNU podľa poisťovne a percenta invalidity"""
@@ -3386,6 +3475,15 @@ def calculate_tnu_price(insurer, invalid_pct, ps, kooperativa_option=None):
 
 @app.route("/tnu", methods=["GET"])
 @login_required
+# ============================================================================
+# TNU MODULE - Trvalé Následky Úrazu (Permanent Injury Insurance)
+# Výpočet ceny poistného TNU na základe % invalidity a poistnej sumy
+# Porovnávanie taríf všetkých poisťovní s farebným zvýrazneím top 3
+# Route: /tnu - Zobrazenie rozhrania s tabuľkou (riadok 3461)
+# Route: /tnu/calc - Backend výpočty (riadok 3609)
+# Funkcia: calculate_tnu_price() - riadok 3259
+# Poisťovne: Allianz, Generáli, Kooperativa 350%/500%, NN, ČSOB, UNIQA 500%/1000%, Wüstenrot
+# ============================================================================
 def tnu():
     content = """
     <h2>Trvalé následky úrazu (TNU)</h2>
@@ -3534,6 +3632,12 @@ def tnu():
 
 @app.route("/tnu/calc", methods=["POST"])
 @login_required
+# ============================================================================
+# TNU BACKEND VÝPOČTY
+# Odoslané parametre JSON: { "ps": <poistná suma v €> }
+# Vracia JSON tabuľku s výpočetami pre všetky poisťovne a percenta (1-100%)
+# Používa funkciu: calculate_tnu_price() - riadok 3259
+# ============================================================================
 def tnu_calc():
     try:
         payload = request.get_json() or {}
