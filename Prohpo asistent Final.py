@@ -54,6 +54,9 @@ APP_TEMPLATE = """<!doctype html>
     .faq-question{width:100%;text-align:left;background:#edf7f9;color:#046f8d;border:1px solid #29b6e8;padding:10px;border-radius:4px;cursor:pointer;font-weight:600;}
     .faq-answer{display:none;background:#f8fbff;border:1px solid #d6e6f5;border-radius:4px;padding:10px;margin-top:6px;white-space:pre-wrap;}
     .form-container{max-width:50%;margin:0;}
+    .top-1{background-color:#1976D2;color:white;font-weight:500;}
+    .top-2{background-color:#59B4E8;color:white;}
+    .top-3{background-color:#A0D8F0;color:#333;}
   </style>
   <script>
     function copyToClipboard(elementId) {
@@ -3410,19 +3413,19 @@ def tnu():
 
     <div class="card" style="padding:14px;border:1px solid #d9e1ea;border-radius:16px;box-shadow:0 4px 18px rgba(15, 23, 42, 0.05);max-width:none;overflow:hidden;">
       <div style="overflow-x:auto;width:100%;">
-        <table id="tnuTable" style="width:100%;min-width:1200px;border-collapse:collapse;font-size:0.9rem;">
+        <table id="tnuTable" style="width:100%;min-width:1200px;border-collapse:collapse;font-size:0.9rem;table-layout:fixed;">
           <thead>
             <tr style="background:#62c7f2;color:#00324f;border:1px solid #999;">
-              <th style="padding:8px;text-align:center;width:50px;">TNU (%)</th>
-              <th style="padding:8px;text-align:right;" data-tnu-insurer="allianz">Allianz</th>
-              <th style="padding:8px;text-align:right;" data-tnu-insurer="generali">Generáli</th>
-              <th style="padding:8px;text-align:right;" data-tnu-insurer="kooperativa_350">Koop 350%</th>
-              <th style="padding:8px;text-align:right;" data-tnu-insurer="kooperativa_500">Koop 500%</th>
-              <th style="padding:8px;text-align:right;" data-tnu-insurer="nn">NN</th>
-              <th style="padding:8px;text-align:right;" data-tnu-insurer="csob">ČSOB</th>
-              <th style="padding:8px;text-align:right;" data-tnu-insurer="uniqa_500">UNIQA 500%</th>
-              <th style="padding:8px;text-align:right;" data-tnu-insurer="uniqa_1000">UNIQA 1000%</th>
-              <th style="padding:8px;text-align:right;" data-tnu-insurer="wdobrom">Wüstenrot</th>
+              <th style="padding:8px;text-align:center;width:50px;box-sizing:border-box;">TNU (%)</th>
+              <th style="padding:8px;text-align:center;width:11%;box-sizing:border-box;" data-tnu-insurer="allianz">Allianz</th>
+              <th style="padding:8px;text-align:center;width:11%;box-sizing:border-box;" data-tnu-insurer="generali">Generáli</th>
+              <th style="padding:8px;text-align:center;width:11%;box-sizing:border-box;" data-tnu-insurer="kooperativa_350">Koop 350%</th>
+              <th style="padding:8px;text-align:center;width:11%;box-sizing:border-box;" data-tnu-insurer="kooperativa_500">Koop 500%</th>
+              <th style="padding:8px;text-align:center;width:11%;box-sizing:border-box;" data-tnu-insurer="nn">NN</th>
+              <th style="padding:8px;text-align:center;width:11%;box-sizing:border-box;" data-tnu-insurer="csob">ČSOB</th>
+              <th style="padding:8px;text-align:center;width:11%;box-sizing:border-box;" data-tnu-insurer="uniqa_500">UNIQA 500%</th>
+              <th style="padding:8px;text-align:center;width:11%;box-sizing:border-box;" data-tnu-insurer="uniqa_1000">UNIQA 1000%</th>
+              <th style="padding:8px;text-align:center;width:11%;box-sizing:border-box;" data-tnu-insurer="wdobrom">Wüstenrot</th>
             </tr>
           </thead>
           <tbody id="tnu_table_body">
@@ -3474,22 +3477,43 @@ def tnu():
       function fillTnuTable(data) {
         const tbody = document.getElementById('tnu_table_body');
         tbody.innerHTML = '';
+        const insurers = ['allianz', 'generali', 'kooperativa_350', 'kooperativa_500', 'nn', 'csob', 'uniqa_500', 'uniqa_1000', 'wdobrom'];
         
         for (let pct = 1; pct <= 100; pct++) {
+          // Zistí všetky hodnoty v riadku
+          const values = [];
+          insurers.forEach(insurer => {
+            values.push({
+              insurer: insurer,
+              value: Number(data[insurer][pct] || 0)
+            });
+          });
+          
+          // Zistí unique hodnoty zoradené zvrchu
+          const uniqueValues = Array.from(new Set(values.map(v => v.value))).sort((a, b) => b - a);
+          const top3 = uniqueValues.slice(0, 3);
+          
+          // Určí ranking pre každú hodnotu
+          const ranking = {};
+          values.forEach(v => {
+            if (top3[0] !== undefined && v.value === top3[0]) ranking[v.insurer] = 'top-1';
+            else if (top3[1] !== undefined && v.value === top3[1]) ranking[v.insurer] = 'top-2';
+            else if (top3[2] !== undefined && v.value === top3[2]) ranking[v.insurer] = 'top-3';
+          });
+          
           const row = document.createElement('tr');
           row.style.borderBottom = '1px solid #ddd';
           row.style.backgroundColor = (pct % 5 === 0) ? '#f9f9f9' : '#fff';
           
-          row.innerHTML = '<td style="padding:6px 8px;text-align:center;font-weight:600;">' + pct + '%</td>' +
-                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="allianz">' + Number(data.allianz[pct] || 0).toFixed(0) + '</td>' +
-                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="generali">' + Number(data.generali[pct] || 0).toFixed(0) + '</td>' +
-                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="kooperativa_350">' + Number(data.kooperativa_350[pct] || 0).toFixed(0) + '</td>' +
-                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="kooperativa_500">' + Number(data.kooperativa_500[pct] || 0).toFixed(0) + '</td>' +
-                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="nn">' + Number(data.nn[pct] || 0).toFixed(0) + '</td>' +
-                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="csob">' + Number(data.csob[pct] || 0).toFixed(0) + '</td>' +
-                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="uniqa_500">' + Number(data.uniqa_500[pct] || 0).toFixed(0) + '</td>' +
-                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="uniqa_1000">' + Number(data.uniqa_1000[pct] || 0).toFixed(0) + '</td>' +
-                          '<td style="padding:6px 8px;text-align:right;" data-tnu-insurer="wdobrom">' + Number(data.wdobrom[pct] || 0).toFixed(0) + '</td>';
+          let html = '<td style="padding:6px 8px;text-align:center;font-weight:600;width:50px;box-sizing:border-box;">' + pct + '%</td>';
+          
+          insurers.forEach(insurer => {
+            const val = Number(data[insurer][pct] || 0).toFixed(0);
+            const className = ranking[insurer] || '';
+            html += '<td style="padding:6px 8px;text-align:center;width:11%;box-sizing:border-box;" data-tnu-insurer="' + insurer + '" class="' + className + '">' + val + '</td>';
+          });
+          
+          row.innerHTML = html;
           tbody.appendChild(row);
         }
         syncTnuColumnVisibility();
