@@ -229,7 +229,7 @@ def build_email_text(oslovenie, meno, typ, adresa_nehnutelnosti, poistovna, zmlu
         f"posielam Vám informáciu o blížiacom sa výročí Vašej poistnej zmluvy {typ} na adrese {adresa_nehnutelnosti} v poisťovni {poistovna} (č. zmluvy: {zmluva}), ktorú sme spoločne uzatvárali.\n"
         f"Výročie tejto poistnej zmluvy je {vyrocie_pz}. Pravdepodobne Vám do mailu prišiel nový predpis na platbu nasledujúceho obdobia.\n"
         f"Neprehliadnite dátum zaplatenia poistnej zmluvy. V prípade nezaplatenia, zmluva zaniká. Spoločne by sme tak museli riešiť proces uzatvárania a vinkulácie zmluvy nanovo.\n\n"
-        f"Ak ste medzičasom zmluvu zaplatili považujte tento email za vybavený.\n"
+        f"Ak ste medzičasom zmluvu zaplatili považujte tento email za vybavený.Pokiaľ ste za posledný rok menili osobné údaje, trvalý pobyt alebo iné informácie súvisiace s touto zmluvou, prosím, pošlite mi ich ako odpoveď na tento e-mail. Budem tak vedieť tieto údaje aktuálne upraviť na Vašej poistnej zmluve.\n"
         f"V prípade otázok ma kontaktujte.\n\n"
         f"Za odpoveď ďakujem a prajem príjemný zvyšok dňa,"
     )
