@@ -58,6 +58,8 @@ app = Flask(__name__)
 app.secret_key = "prohypo-secret"
 FAQ_FILE_PATH = Path(__file__).resolve().parent / "data" / "faq_items.json"
 INTERESTING_NUMBERS_FILE_PATH = Path(__file__).resolve().parent / "data" / "zaujimave_cisla.json"
+RZP_OVERRIDES_FILE_PATH = Path(__file__).resolve().parent / "data" / "rzp_overrides.json"
+RZP_EDIT_PASSWORD = "1234"
 # Heslo na vstup do aplikácie - môžete ho zmeniť
 APP_PASSWORD = "0000"
 def login_required(f):
@@ -67,6 +69,17 @@ def login_required(f):
       return redirect(url_for('login'))
     return f(*args, **kwargs)
   return decorated_function
+
+
+def load_rzp_overrides():
+  if not RZP_OVERRIDES_FILE_PATH.exists():
+    return {}
+  try:
+    with RZP_OVERRIDES_FILE_PATH.open("r", encoding="utf-8") as file:
+      data = json.load(file)
+    return data if isinstance(data, dict) else {}
+  except (OSError, json.JSONDecodeError):
+    return {}
 APP_TEMPLATE = """<!doctype html>
 <html lang="sk">
 <head>
@@ -91,8 +104,8 @@ APP_TEMPLATE = """<!doctype html>
     .error{color:#c00;font-weight:bold;}
     .result{background:#edf7f9;color:#046f8d;border:1px solid #29b6e8;padding:12px;border-radius:4px;white-space:pre-wrap;}
     .copy-btn{margin-bottom:10px;}
-    .faq-group{margin-bottom:20px;max-width:50%;margin-left:0;margin-right:auto;}
-    .faq-item{margin:0 0 10px;}
+    .faq-group{margin-bottom:20px;max-width:100%;margin-left:0;margin-right:auto;}
+    .faq-item{margin:0 0 10px;background:#fff;border:1px solid #d6e6f5;border-radius:6px;padding:8px;}
     .faq-question{width:100%;text-align:left;background:#edf7f9;color:#046f8d;border:1px solid #29b6e8;padding:10px;border-radius:4px;cursor:pointer;font-weight:600;}
     .faq-answer{display:none;background:#f8fbff;border:1px solid #d6e6f5;border-radius:4px;padding:10px;margin-top:6px;white-space:pre-wrap;}
     .form-container{max-width:50%;margin:0;}
@@ -309,13 +322,15 @@ def login():
         return redirect(url_for('home'))
 
     if request.method == "POST":
-        password = request.form.get("password", "")
-        if password == APP_PASSWORD:
-            session['logged_in'] = True
-            return redirect(url_for('home'))
-        else:
-            session['logged_in'] = False
-            flash("Nesprávne heslo! Skúste znova.")
+      password = request.form.get("password", "")
+      if password in {APP_PASSWORD, RZP_EDIT_PASSWORD}:
+        session['logged_in'] = True
+        session['is_admin'] = password == RZP_EDIT_PASSWORD
+        return redirect(url_for('home'))
+      else:
+        session['logged_in'] = False
+        session['is_admin'] = False
+        flash("Nesprávne heslo! Skúste znova.")
     
     login_template = """<!doctype html>
 <html lang="sk">
@@ -735,6 +750,109 @@ def backoffice():
     return render_template_string(APP_TEMPLATE, content=content)
 
 
+def content_editor_script():
+    return """
+    <script>
+      function enableContentEditing(kind) {
+        document.querySelectorAll('[data-content-kind="' + kind + '"] [data-content-field]').forEach((element) => {
+          element.contentEditable = 'true';
+          element.classList.add('content-editable');
+        });
+        document.querySelectorAll('[data-content-kind="' + kind + '"]').forEach((item) => {
+          if (item.querySelector('.content-delete-button')) return;
+          const deleteButton = document.createElement('button');
+          deleteButton.type = 'button';
+          deleteButton.className = 'btn content-delete-button';
+          deleteButton.style.background = '#c62828';
+          deleteButton.style.marginTop = '8px';
+          deleteButton.textContent = 'Odstrániť otázku';
+          deleteButton.onclick = () => {
+            if (window.confirm('Naozaj chcete túto položku odstrániť?')) {
+              item.dataset.deleted = 'true';
+              item.style.display = 'none';
+              const group = item.closest('.faq-group');
+              if (group && group.querySelectorAll('[data-content-kind]:not([data-deleted="true"])').length === 0) {
+                group.style.display = 'none';
+              }
+            }
+          };
+          item.appendChild(deleteButton);
+        });
+        const form = document.getElementById('faqAdminForm');
+        if (form && kind === 'faq') {
+          form.style.display = 'block';
+          const sectionSelect = document.getElementById('newFaqSection');
+          const newSection = document.getElementById('newFaqNewSection');
+          sectionSelect.onchange = () => {
+            newSection.style.display = sectionSelect.value === '__new__' ? 'block' : 'none';
+          };
+        }
+        const numbersForm = document.getElementById('numbersAdminForm');
+        if (numbersForm && kind === 'numbers') {
+          numbersForm.style.display = 'block';
+          const sectionSelect = document.getElementById('newNumberSection');
+          const newSection = document.getElementById('newNumberNewSection');
+          sectionSelect.onchange = () => {
+            newSection.style.display = sectionSelect.value === '__new__' ? 'block' : 'none';
+          };
+        }
+        if (kind === 'numbers' && !document.getElementById('numbersSaveButton')) {
+          const button = document.createElement('button');
+          button.id = 'numbersSaveButton';
+          button.className = 'btn';
+          button.textContent = 'Uložiť zmeny';
+          button.onclick = () => saveContentChanges('numbers');
+          document.querySelector('h2').after(button);
+        }
+        alert('Editácia je aktívna. Po úprave kliknite na uloženie.');
+      }
+
+      async function saveContentChanges(kind) {
+        const items = Array.from(document.querySelectorAll('[data-content-kind="' + kind + '"]'));
+        const updates = items.filter((item) => item.dataset.deleted !== 'true').map((item) => ({
+          index: Number(item.dataset.contentIndex),
+          sekcia: item.closest('.faq-group')?.querySelector('h3')?.innerText.trim() || '',
+          otazka: item.querySelector('[data-content-field="otazka"]')?.innerText.trim() || '',
+          odpoved: item.querySelector('[data-content-field="odpoved"]')?.innerText.trim() || ''
+        }));
+        const deleted = items.filter((item) => item.dataset.deleted === 'true').map((item) => Number(item.dataset.contentIndex));
+        let newItem = null;
+        if (kind === 'faq') {
+          const sectionSelect = document.getElementById('newFaqSection');
+          newItem = {
+            sekcia: sectionSelect?.value === '__new__'
+              ? document.getElementById('newFaqNewSection')?.value.trim() || ''
+              : sectionSelect?.value.trim() || '',
+            otazka: document.getElementById('newFaqQuestion')?.value.trim() || '',
+            odpoved: document.getElementById('newFaqAnswer')?.value.trim() || ''
+          };
+        } else if (kind === 'numbers') {
+          const sectionSelect = document.getElementById('newNumberSection');
+          newItem = {
+            sekcia: sectionSelect?.value === '__new__'
+              ? document.getElementById('newNumberNewSection')?.value.trim() || ''
+              : sectionSelect?.value.trim() || '',
+            otazka: document.getElementById('newNumberQuestion')?.value.trim() || '',
+            odpoved: document.getElementById('newNumberAnswer')?.value.trim() || ''
+          };
+        }
+        const response = await fetch('/content/admin/save', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({kind, updates, deleted, new_item: newItem})
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          alert(result.error || 'Údaje sa nepodarilo uložiť.');
+          return;
+        }
+        alert('Údaje boli uložené. Stránka sa obnoví.');
+        window.location.reload();
+      }
+    </script>
+    """
+
+
 @app.route("/najcastejsie_otazky")
 @login_required
 def najcastejsie_otazky():
@@ -752,27 +870,49 @@ def najcastejsie_otazky():
         "Vinkulácie": "https://docs.google.com/spreadsheets/d/1sM415O7Mcw9x9dlFe9MYvXNRn-sjHiE8/edit?gid=508251846#gid=508251846"
     }
 
-    content = "<h2>Najčastejšie otázky</h2>"
+    faq_section_options = "".join(
+        f"<option value='{escape(section)}'>{escape(section)}</option>"
+        for section in groups
+    )
+    admin_button = "<div style='margin-bottom:16px;'><button class='btn' type='button' onclick='enableContentEditing(\"faq\")'>Upraviť / pridať otázku</button></div>" if session.get('is_admin') else ""
+    content = f"""
+    <h2>Najčastejšie otázky</h2>
+    {admin_button}
+    <div id='faqAdminForm' style='display:none;background:#fff8d6;border:1px solid #f0b400;padding:16px;margin-bottom:18px;border-radius:6px;'>
+      <h3>Nová najčastejšia otázka</h3>
+      <select id='newFaqSection'>
+        <option value=''>Vyberte existujúcu sekciu</option>
+        {faq_section_options}
+        <option value='__new__'>Nová sekcia</option>
+      </select>
+      <input id='newFaqNewSection' placeholder='Názov novej sekcie' style='display:none;'>
+      <input id='newFaqQuestion' placeholder='Otázka' required>
+      <textarea id='newFaqAnswer' placeholder='Odpoveď' rows='5' required></textarea>
+      <button class='btn' type='button' onclick='saveContentChanges("faq")'>Uložiť zmeny a novú otázku</button>
+    </div>
+    """
+    item_index = 0
     for sekcia, items in groups.items():
-        content += f"<div class='faq-group'><h3>{sekcia}</h3>"
-        for item in items:
-            answer_html = linkify_text(item["odpoved"])
-            content += "<div class='faq-item'>"
-            content += f"<button type='button' class='faq-question' onclick='toggleFaqAnswer(this)'>{item['otazka']}</button>"
-            content += f"<div class='faq-answer'>{answer_html}"
-            if sekcia == "Nadine linky" and item["otazka"] == "Na ktorom linku, čo nájdem?":
-                content += "<div class='faq-links' style='margin-top:10px;'>"
-                for title, url in nadine_links.items():
-                    content += (
-                        f"<a class='btn' href='{url}' target='_blank' rel='noopener noreferrer'>{title}</a>"
-                    )
-                content += "</div>"
-            content += "</div>"
-            content += "</div>"
+      content += f"<div class='faq-group'><h3>{escape(sekcia)}</h3>"
+      for item in items:
+        answer_html = linkify_text(item["odpoved"])
+        content += f"<div class='faq-item' data-content-kind='faq' data-content-index='{item_index}'>"
+        content += f"<button type='button' class='faq-question' onclick='toggleFaqAnswer(this)' data-content-field='otazka'>{escape(item['otazka'])}</button>"
+        content += f"<div class='faq-answer' data-content-field='odpoved'>{answer_html}"
+        if sekcia == "Nadine linky" and item["otazka"] == "Na ktorom linku, čo nájdem?":
+          content += "<div class='faq-links' style='margin-top:10px;'>"
+          for title, url in nadine_links.items():
+            content += (
+              f"<a class='btn' href='{url}' target='_blank' rel='noopener noreferrer'>{title}</a>"
+            )
+          content += "</div>"
         content += "</div>"
+        content += "</div>"
+        item_index += 1
+      content += "</div>"
 
+    content += content_editor_script()
     return render_template_string(APP_TEMPLATE, content=content)
-
 
 @app.route("/zaujimave_cisla")
 @login_required
@@ -788,16 +928,102 @@ def zaujimave_cisla():
         groups.setdefault(item["sekcia"], []).append(item)
 
     content = "<h2>Zaujímavé čísla</h2>"
+    if session.get('is_admin'):
+      content += "<div style='margin-bottom:16px;'><button class='btn' type='button' onclick='enableContentEditing(\"numbers\")'>Upraviť údaje</button></div>"
+    section_options = "".join(
+        f"<option value='{escape(section)}'>{escape(section)}</option>"
+        for section in groups
+    )
+    content += f"""
+    <div id='numbersAdminForm' style='display:none;background:#fff8d6;border:1px solid #f0b400;padding:16px;margin-bottom:18px;border-radius:6px;'>
+      <h3>Nová zaujímavosť</h3>
+      <select id='newNumberSection'>
+        <option value=''>Vyberte existujúcu sekciu</option>
+        {section_options}
+        <option value='__new__'>Nová sekcia</option>
+      </select>
+      <input id='newNumberNewSection' placeholder='Názov novej sekcie' style='display:none;'>
+      <input id='newNumberQuestion' placeholder='Zaujímavosť / otázka'>
+      <textarea id='newNumberAnswer' placeholder='Vysvetlenie / odpoveď' rows='5'></textarea>
+      <button class='btn' type='button' onclick='saveContentChanges("numbers")'>Uložiť zmeny a novú zaujímavosť</button>
+    </div>
+    """
+    number_index = 0
     for sekcia, section_items in groups.items():
-        content += f"<div class='faq-group'><h3>{sekcia}</h3>"
-        for item in section_items:
-            content += "<div class='faq-item'>"
-            content += f"<button type='button' class='faq-question' onclick='toggleFaqAnswer(this)'>{item['otazka']}</button>"
-            content += f"<div class='faq-answer'>{item['odpoved']}</div>"
-            content += "</div>"
+      content += f"<div class='faq-group'><h3>{escape(sekcia)}</h3>"
+      for item in section_items:
+        content += f"<div class='faq-item' data-content-kind='numbers' data-content-index='{number_index}'>"
+        content += f"<button type='button' class='faq-question' onclick='toggleFaqAnswer(this)' data-content-field='otazka'>{escape(item['otazka'])}</button>"
+        content += f"<div class='faq-answer' data-content-field='odpoved'>{escape(item['odpoved']).replace(chr(10), '<br>')}</div>"
         content += "</div>"
+        number_index += 1
+      content += "</div>"
 
+    content += content_editor_script()
     return render_template_string(APP_TEMPLATE, content=content)
+
+
+@app.route("/content/admin/save", methods=["POST"])
+@login_required
+def save_content_edits():
+  payload = request.get_json(silent=True) or {}
+  if session.get("is_admin") is not True:
+    return jsonify({"error": "Administrátorské oprávnenie je potrebné."}), 403
+
+  kind = payload.get("kind")
+  if kind not in {"faq", "numbers"}:
+    return jsonify({"error": "Neznámy typ obsahu."}), 400
+  file_path = FAQ_FILE_PATH if kind == "faq" else INTERESTING_NUMBERS_FILE_PATH
+  items = load_faq_items() if kind == "faq" else load_interesting_numbers()
+  updates = payload.get("updates")
+  if not isinstance(updates, list):
+    return jsonify({"error": "Neplatné údaje na uloženie."}), 400
+
+  for update in updates:
+    if not isinstance(update, dict):
+      continue
+    try:
+      index = int(update.get("index", -1))
+    except (TypeError, ValueError):
+      continue
+    if not 0 <= index < len(items):
+      continue
+    section = str(update.get("sekcia", "")).strip()
+    question = str(update.get("otazka", "")).strip()
+    answer = str(update.get("odpoved", "")).strip()
+    if section and question and answer:
+      items[index] = {"sekcia": section, "otazka": question, "odpoved": answer}
+
+  deleted = set()
+  for value in payload.get("deleted", []):
+    try:
+      index = int(value)
+    except (TypeError, ValueError):
+      continue
+    if 0 <= index < len(items):
+      deleted.add(index)
+  if deleted:
+    items = [item for index, item in enumerate(items) if index not in deleted]
+
+  new_item = payload.get("new_item")
+  if kind in {"faq", "numbers"} and isinstance(new_item, dict):
+    section = str(new_item.get("sekcia", "")).strip()
+    question = str(new_item.get("otazka", "")).strip()
+    answer = str(new_item.get("odpoved", "")).strip()
+    if any((section, question, answer)) and not all((section, question, answer)):
+      return jsonify({"error": "Nová položka musí mať vyplnenú sekciu, otázku aj odpoveď."}), 400
+    if section and question and answer:
+      items.append({"sekcia": section, "otazka": question, "odpoved": answer})
+
+  try:
+    temporary_path = file_path.with_suffix(".tmp")
+    with temporary_path.open("w", encoding="utf-8") as file:
+      json.dump(items, file, ensure_ascii=False, indent=2)
+    temporary_path.replace(file_path)
+  except OSError:
+    return jsonify({"error": "Údaje sa nepodarilo zapísať na disk."}), 500
+
+  return jsonify({"ok": True, "saved": len(items)})
 
 
 @app.route("/hypo", methods=["GET"])
@@ -2442,6 +2668,14 @@ def rzp():
     },
   ]
 
+  rzp_overrides = load_rzp_overrides()
+  for group in row_groups + risk_groups + limits_groups:
+    for row_label, values in group["rows"]:
+      for insurer in insurers:
+        key = "||".join((group["title"], row_label, insurer["slug"]))
+        if key in rzp_overrides:
+          values[insurer["slug"]] = str(rzp_overrides[key])
+
   # Extract 'Kritické choroby' into its own group and remove it from rizika
   critical_groups = [g for g in risk_groups if g.get("title") == "Kritické choroby"]
   risk_groups = [g for g in risk_groups if g.get("title") != "Kritické choroby"]
@@ -2474,7 +2708,11 @@ def rzp():
         cells = []
         for insurer in insurers:
           cell_value = normalize_text(values.get(insurer["slug"], ""))
-          cells.append(f'<td data-rzp-insurer="{insurer["slug"]}">{cell_value}</td>')
+          cells.append(
+            f'<td data-rzp-insurer="{insurer["slug"]}" '
+            f'data-rzp-group="{escape(group["title"])}" '
+            f'data-rzp-row="{escape(row_label)}">{cell_value}</td>'
+          )
         body_rows.append(
           f'<tr><th class="rzp-row-label">{normalize_text(row_label)}</th>{"".join(cells)}</tr>'
         )
@@ -2678,6 +2916,11 @@ def rzp():
         text-align: left;
         line-height: 1.15;
       }}
+      .rzp-table tbody td.rzp-editable {{
+        background: #fff8d6;
+        outline: 2px solid #f0b400;
+        cursor: text;
+      }}
       .rzp-empty-row {{
         text-align: center !important;
         color: #666;
@@ -2728,6 +2971,7 @@ def rzp():
         </div>
         <button class="rzp-button" type="button" onclick="toggleRzpFilters()">Vybrať poisťovne</button>
         <button class="rzp-button" type="button" onclick="toggleRzpExtraFilters()">Zmeniť filtre</button>
+        {('<button class="rzp-button" type="button" onclick="enableRzpEditing()">Upraviť údaje</button>' if session.get('is_admin') else '')}
       </div>
 
       <div id="rzpFilterPanel" class="rzp-filter-panel">
@@ -2785,6 +3029,51 @@ def rzp():
         }}
       }}
 
+      async function enableRzpEditing() {{
+        const cells = document.querySelectorAll('.rzp-table tbody td[data-rzp-group]');
+        if (!cells.length) return;
+        cells.forEach((cell) => {{
+          cell.contentEditable = 'true';
+          cell.classList.add('rzp-editable');
+        }});
+        let saveButton = document.getElementById('rzpSaveButton');
+        if (!saveButton) {{
+          saveButton = document.createElement('button');
+          saveButton.id = 'rzpSaveButton';
+          saveButton.className = 'rzp-button';
+          saveButton.textContent = 'Uložiť zmeny';
+          saveButton.onclick = () => saveRzpEdits();
+          document.querySelector('.rzp-toolbar').appendChild(saveButton);
+        }}
+        alert('Editácia je aktívna. Po úprave buniek kliknite na Uložiť zmeny.');
+      }}
+
+      async function saveRzpEdits() {{
+        const updates = Array.from(document.querySelectorAll('.rzp-editable')).map((cell) => ({{
+          group: cell.dataset.rzpGroup,
+          row: cell.dataset.rzpRow,
+          insurer: cell.dataset.rzpInsurer,
+          value: cell.innerText.trim()
+        }}));
+        const response = await fetch('/rzp/admin/save', {{
+          method: 'POST',
+          headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{updates}})
+        }});
+        const result = await response.json();
+        if (!response.ok) {{
+          alert(result.error || 'Údaje sa nepodarilo uložiť.');
+          return;
+        }}
+        document.querySelectorAll('.rzp-editable').forEach((cell) => {{
+          cell.contentEditable = 'false';
+          cell.classList.remove('rzp-editable');
+        }});
+        const saveButton = document.getElementById('rzpSaveButton');
+        if (saveButton) saveButton.remove();
+        alert('Údaje RŽP boli uložené.');
+      }}
+
       function activateRzpTab(tabName) {{
         document.querySelectorAll('.rzp-tab').forEach((button) => {{
           button.classList.toggle('active', button.dataset.rzpTab === tabName);
@@ -2826,6 +3115,40 @@ def rzp():
     </script>
   """
   return render_template_string(APP_TEMPLATE, content=content)
+
+
+@app.route("/rzp/admin/save", methods=["POST"])
+@login_required
+def save_rzp_edits():
+  payload = request.get_json(silent=True) or {}
+  if session.get("is_admin") is not True:
+    return jsonify({"error": "Administrátorské oprávnenie je potrebné."}), 403
+
+  updates = payload.get("updates")
+  if not isinstance(updates, list):
+    return jsonify({"error": "Neplatné údaje na uloženie."}), 400
+
+  overrides = {}
+  for update in updates:
+    if not isinstance(update, dict):
+      continue
+    group = str(update.get("group", ""))
+    row = str(update.get("row", ""))
+    insurer = str(update.get("insurer", ""))
+    if group and row and insurer:
+      key = "||".join((group, row, insurer))
+      overrides[key] = str(update.get("value", ""))
+
+  try:
+    RZP_OVERRIDES_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = RZP_OVERRIDES_FILE_PATH.with_suffix(".tmp")
+    with temporary_path.open("w", encoding="utf-8") as file:
+      json.dump(overrides, file, ensure_ascii=False, indent=2)
+    temporary_path.replace(RZP_OVERRIDES_FILE_PATH)
+  except OSError:
+    return jsonify({"error": "Údaje sa nepodarilo zapísať na disk."}), 500
+
+  return jsonify({"ok": True, "saved": len(overrides)})
 
 
 @app.route("/hypo/calc", methods=["POST"])
