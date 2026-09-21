@@ -166,6 +166,7 @@ APP_TEMPLATE = """<!doctype html>
       <a href="{{ url_for('backoffice') }}">⚙️ Backoffice email</a>
       <a href="{{ url_for('hypo') }}">🏦 Hypo VS Poistná suma</a>
       <a href="{{ url_for('izp') }}">📊 IŽP</a>
+      <a href="{{ url_for('investicie') }}">📈 Investície</a>
       <a href="{{ url_for('rzp') }}">🛡️ RŽP</a>
       <a href="{{ url_for('tnu') }}">💉 TNU</a>
       <a href="{{ url_for('najcastejsie_otazky') }}">❓ FAQ</a>
@@ -229,7 +230,7 @@ def build_email_text(oslovenie, meno, typ, adresa_nehnutelnosti, poistovna, zmlu
         f"posielam Vám informáciu o blížiacom sa výročí Vašej poistnej zmluvy {typ} na adrese {adresa_nehnutelnosti} v poisťovni {poistovna} (č. zmluvy: {zmluva}), ktorú sme spoločne uzatvárali.\n"
         f"Výročie tejto poistnej zmluvy je {vyrocie_pz}. Pravdepodobne Vám do mailu prišiel nový predpis na platbu nasledujúceho obdobia.\n"
         f"Neprehliadnite dátum zaplatenia poistnej zmluvy. V prípade nezaplatenia, zmluva zaniká. Spoločne by sme tak museli riešiť proces uzatvárania a vinkulácie zmluvy nanovo.\n\n"
-        f"Ak ste medzičasom zmluvu zaplatili považujte tento email za vybavený.Pokiaľ ste za posledný rok menili osobné údaje, trvalý pobyt alebo iné informácie súvisiace s touto zmluvou, prosím, pošlite mi ich ako odpoveď na tento e-mail. Budem tak vedieť tieto údaje aktuálne upraviť na Vašej poistnej zmluve.\n"
+        f"Ak ste medzičasom zmluvu zaplatili považujte tento email za vybavený. Pokiaľ ste za posledný rok menili osobné údaje, trvalý pobyt alebo iné informácie súvisiace s touto zmluvou, prosím, pošlite mi ich ako odpoveď na tento e-mail. Budem tak vedieť tieto údaje aktuálne upraviť na Vašej poistnej zmluve.\n"
         f"V prípade otázok ma kontaktujte.\n\n"
         f"Za odpoveď ďakujem a prajem príjemný zvyšok dňa,"
     )
@@ -811,8 +812,8 @@ def zaujimave_cisla():
 def hypo():
     content = """
     <h2>Hypotekárna kalkulačka - Hypo VS Poistná suma</h2>
-    <div style="display:flex;gap:20px;align-items:flex-start;">
-      <div style="width:300px;">
+    <div style="display:flex;flex-direction:column;gap:20px;align-items:stretch;">
+      <div style="width:100%;">
         <div class="card" style="padding:16px;">
           <h4 style="margin-top:0;">Vstupné údaje</h4>
           <label><strong>Výška úveru (€)</strong></label>
@@ -839,7 +840,7 @@ def hypo():
         </div>
       </div>
 
-      <div style="flex:1;">
+      <div style="width:100%;">
         <div id="hypo_alerts" style="margin-bottom:16px;"></div>
         
         <div id="hypo_results" style="display:none;">
@@ -862,7 +863,9 @@ def hypo():
 
           <div class="card" style="padding:16px;margin-bottom:16px;">
             <h4 style="margin-top:0;">Graf splátok a poistenia</h4>
-          <canvas id="hypo_chart" height="180"></canvas>
+          <div style="height:500px;max-height:600px;min-height:400px;position:relative;">
+            <canvas id="hypo_chart"></canvas>
+          </div>
           <div class="card" style="padding:16px;">
             <h4 style="margin-top:0;">Tabuľka splátok (prvých 50 mesiacov)</h4>
             <div style="max-height:300px;overflow-y:auto;border:1px solid #eee;border-radius:4px;">
@@ -1021,6 +1024,7 @@ def hypo():
           },
           options: {
             responsive: true,
+            maintainAspectRatio: false,
             interaction: {mode: 'index', intersect: false},
             plugins: {
               legend: {position: 'top'},
@@ -2842,6 +2846,8 @@ def hypo_calc():
         annual_rate = float(body.get('annual_rate', 0))
         years = int(body.get('years', 0))
         first_payment_str = body.get('first_payment', '')
+
+
         insurance_sum = float(body.get('insurance_sum', 0))
         insurance_years = int(body.get('insurance_years', 0))
         increase_pct = float(body.get('increase_pct', 0) or 0)
@@ -2880,6 +2886,60 @@ def hypo_calc():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+def _evaluate_investment_questionnaire(payload):
+    question_keys = tuple(f'q{number}' for number in range(1, 15))
+    answers = {}
+    for key in question_keys:
+        value = str(payload.get(key, '')).strip()
+        if value not in {'1', '2', '3', '4'}:
+            raise ValueError('Vyberte jednu odpoveď pri každej otázke.')
+        answers[key] = int(value)
+
+    preferred_answers = {
+        'Finax': ({1, 2}, {3, 4}, {1, 3}, {1, 2}, {1, 2}, {1, 2}, {1}, {1}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}),
+        'Amundi Rytmus ETF plus': ({2, 3}, {3, 4}, {1, 3}, {2, 3}, {2, 3}, {2, 3}, {2}, {2}, {2, 3}, {1, 2, 3}, {1, 2, 3}, {2, 3}, {2}, {2, 3}),
+        'WEM FP': ({3, 4}, {3, 4}, {2, 3}, {3, 4}, {3, 4}, {3, 4}, {3, 4}, {3, 4}, {3, 4}, {3, 4}, {3, 4}, {3, 4}, {3, 4}, {3, 4}),
+    }
+    product_scores = {}
+    for product, preferences in preferred_answers.items():
+        product_score = 0
+        for number, preferred in enumerate(preferences, start=1):
+            answer = answers[f'q{number}']
+            product_score += 4 if answer in preferred else (2 if any(abs(answer - value) == 1 for value in preferred) else 0)
+        product_scores[product] = product_score
+
+    recommendation = max(product_scores, key=product_scores.get)
+    descriptions = {
+        'Finax': 'Vaše odpovede smerujú k jednoduchému, transparentnému a prevažne pasívnemu ETF riešeniu.',
+        'Amundi Rytmus ETF plus': 'Vaše odpovede smerujú k hotovému ETF portfóliu s pravidelným investovaním a priebežnou úpravou.',
+        'WEM FP': 'Vaše odpovede smerujú k aktívnejšiemu riadeniu s väčším priestorom pre individuálne rozhodovanie.',
+    }
+    recommendation_reasons = {
+        'Finax': 'Dlhodobý horizont, dôraz na jednoduchosť a citlivosť na poplatky najlepšie zodpovedajú pasívnemu ETF riešeniu.',
+        'Amundi Rytmus ETF plus': 'Preferencia hotového portfólia a pravidelného investovania zodpovedá modelovému ETF portfóliu.',
+        'WEM FP': 'Vyššia tolerancia kolísania a záujem o aktívnejšie riadenie zodpovedajú flexibilnejšej stratégii.',
+    }
+    warnings = []
+    if answers['q2'] == 1:
+        warnings.append('Pri krátkom horizonte môže byť rizikové investovať do kolísavých aktív.')
+    if answers['q4'] == 1:
+        warnings.append('Nízka tolerancia poklesu je dôležitá pri výbere rizikovejšieho investičného riešenia.')
+    if answers['q12'] == 1:
+        warnings.append('Ak potrebujete vysokú likviditu, investujte iba prostriedky, ktoré nebudete krátkodobo potrebovať.')
+    if answers['q13'] == 1:
+        warnings.append('Pri dôraze na nízke poplatky si vždy overte úplný sadzobník a priebežné náklady produktu.')
+
+    return {
+        'score': product_scores[recommendation],
+        'max_score': 56,
+        'product_scores': product_scores,
+        'profile': recommendation,
+        'description': descriptions[recommendation],
+        'recommendation': recommendation_reasons[recommendation],
+        'warnings': warnings,
+    }
 
 
 def _compute_izp_projection(payload):
@@ -3003,6 +3063,84 @@ def _compute_izp_projection(payload):
         'investment_series': [row['fund'] for row in investment_yearly_rows],
         'summary': summary,
     }
+
+
+@app.route("/investicie", methods=["GET"])
+@login_required
+def investicie():
+    questions = [
+        ('Investičný cieľ', 'Aký je hlavný cieľ Vašej investície?', ['Tvorba rezervy a ochrana hodnoty majetku.', 'Pravidelné dlhodobé budovanie majetku.', 'Rast majetku pri primeranom kolísaní.', 'Maximálny dlhodobý rast aj za cenu vyšších výkyvov.']),
+        ('Investičný cieľ', 'Na aké obdobie plánujete investovať?', ['Menej ako 3 roky.', '3 až 5 rokov.', '5 až 10 rokov.', 'Viac ako 10 rokov.']),
+        ('Investičný cieľ', 'Ako plánujete investovať?', ['Pravidelne mesačne.', 'Jednorazovo.', 'Kombináciou jednorazovej a pravidelnej investície.']),
+        ('Vzťah k riziku', 'Ako by ste reagovali, ak by hodnota investície dočasne klesla o 10 %?', ['Investíciu by som ukončil/a.', 'Bol/a by som znepokojený/á, ale vyčkal/a by som.', 'Vnímal/a by som to ako bežnú súčasť investovania.', 'Pokles by som využil/a na ďalší vklad.']),
+        ('Vzťah k riziku', 'Čo je pre Vás dôležitejšie?', ['Stabilita a nižšie riziko.', 'Rovnováha medzi rizikom a výnosom.', 'Vyšší výnos aj za cenu väčšieho kolísania.', 'Dlhodobý rast, krátkodobé výkyvy mi neprekážajú.']),
+        ('Vzťah k riziku', 'Ktorý výrok Vás vystihuje najviac?', ['Nechcem, aby hodnota investície výraznejšie kolísala.', 'Menšie až stredné kolísanie akceptujem.', 'Stredné až vyššie kolísanie akceptujem, ak má investícia rastový potenciál.', 'Vysoké kolísanie akceptujem, ak je cieľom vyšší dlhodobý výnos.']),
+        ('Preferovaný spôsob správy', 'Čo od investičného riešenia očakávate?', ['Čo najjednoduchšie a prehľadné riešenie.', 'Hotové portfólio podľa môjho rizikového profilu.', 'Aktívnejšie riadenie portfólia.', 'Ešte nemám jasnú preferenciu.']),
+        ('Preferovaný spôsob správy', 'Ktorý prístup Vám je bližší?', ['Pasívne ETF portfólio, ktoré dlhodobo sleduje trh.', 'Riadené ETF portfólio s priebežnými úpravami podľa trhu.', 'Aktívne riadená stratégia s väčším priestorom na rozhodovanie správcu.', 'Potrebujem to najprv podrobnejšie vysvetliť.']),
+        ('Preferovaný spôsob správy', 'Ako dôležitá je pre Vás jednoduchosť poplatkov?', ['Veľmi dôležitá.', 'Skôr dôležitá.', 'Nie je rozhodujúca.', 'Ak je riešenie kvalitné, zložitejšia štruktúra mi nevadí.']),
+        ('Finančné nastavenie', 'Akú výšku pravidelnej investície plánujete?', ['Do 50 EUR mesačne.', '50 až 100 EUR mesačne.', '100 až 300 EUR mesačne.', 'Viac ako 300 EUR mesačne.']),
+        ('Finančné nastavenie', 'Plánujete aj jednorazový vklad?', ['Nie.', 'Áno, do 1 000 EUR.', 'Áno, 1 000 až 10 000 EUR.', 'Áno, viac ako 10 000 EUR.']),
+        ('Finančné nastavenie', 'Je pre Vás dôležitá možnosť investíciu prerušiť alebo vybrať peniaze?', ['Áno, veľmi.', 'Skôr áno.', 'Skôr nie.', 'Nie, prioritou je dlhodobé investovanie.']),
+        ('Praktické preferencie', 'Čo Vám viac vyhovuje z pohľadu poplatkov?', ['Jeden priebežný a ľahko čitateľný poplatok.', 'Vstupný poplatok a nižší priebežný poplatok.', 'Akceptujem aj viacvrstvovú štruktúru poplatkov, ak je stratégia aktívnejšia.', 'Neviem posúdiť.']),
+        ('Praktické preferencie', 'Aký typ komunikácie a správy preferujete?', ['Skôr automatizované a jednoduché riešenie.', 'Jasne definované modelové portfólio.', 'Individuálnejšie a aktívnejšie riadenie.', 'Potrebujem osobné vysvetlenie a odporúčanie.']),
+    ]
+    sections = []
+    current_section = None
+    current_questions = []
+    for index, (section, question, options) in enumerate(questions, start=1):
+      if current_section is not None and section != current_section:
+        sections.append(f'<section class="investment-question-group"><h4>{current_section}</h4>{"".join(current_questions)}</section>')
+        current_questions = []
+      current_section = section
+      options_html = ''.join(f'<option value="{option_index}">{option}</option>' for option_index, option in enumerate(options, start=1))
+      current_questions.append(f'<div class="investment-question"><label for="q{index}"><strong>{index}. {question}</strong></label><select id="q{index}" required><option value="">Vyberte odpoveď</option>{options_html}</select></div>')
+    sections.append(f'<section class="investment-question-group"><h4>{current_section}</h4>{"".join(current_questions)}</section>')
+    content = f"""
+    <h2>Investície</h2>
+    <div class="card" style="padding:16px;max-width:980px;">
+      <p style="margin-top:0;color:#666;">Vyplňte dotazník podľa svojej situácie. Výsledok je orientačný podklad pre následné odborné odporúčanie.</p>
+      <form id="investmentQuestionnaire" onsubmit="runInvestmentQuestionnaire(event)">
+        {''.join(sections)}
+        <button class="btn" type="submit" style="margin-top:14px;">Vyhodnotiť dotazník</button>
+      </form>
+      <div id="questionnaire_result" style="display:none;margin-top:16px;"></div>
+    </div>
+    <style>
+      .investment-question-group {{
+        margin-top: 22px;
+      }}
+      .investment-question-group:first-of-type {{
+        margin-top: 0;
+      }}
+      .investment-question-group h4 {{
+        margin: 0 0 10px;
+      }}
+      .investment-question {{
+        margin-bottom: 14px;
+      }}
+    </style>
+    <script>
+      async function runInvestmentQuestionnaire(event) {{
+        event.preventDefault();
+        const result = document.getElementById('questionnaire_result');
+        const payload = {{}};
+        for (let index = 1; index <= 14; index++) payload[`q${{index}}`] = document.getElementById(`q${{index}}`).value;
+        try {{
+          const response = await fetch('/investicie/questionnaire', {{method:'POST', credentials:'same-origin', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify(payload)}});
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Vyhodnotenie zlyhalo.');
+          const scores = Object.entries(data.product_scores).map(([name, score]) => `<li><strong>${{name}}</strong>: ${{score}}/${{data.max_score}} bodov</li>`).join('');
+          const warnings = data.warnings.length ? `<div style="margin-top:10px;padding:10px;border-radius:8px;background:#fff8e1;border:1px solid #ffe082;color:#6d4c00;"><strong>Upozornenie</strong><ul>${{data.warnings.map((warning) => `<li>${{warning}}</li>`).join('')}}</ul></div>` : '';
+          result.style.display = 'block';
+          result.innerHTML = `<div style="padding:14px;border-radius:8px;background:#edf7f9;border:1px solid #29b6e8;"><div style="font-size:.85rem;color:#666;">Najvyššia zhoda: ${{data.score}}/${{data.max_score}} bodov</div><h3 style="margin:4px 0;">Odporúčaný produkt: ${{data.profile}}</h3><p>${{data.description}}</p><p><strong>Dôvod odporúčania:</strong> ${{data.recommendation}}</p><p><strong>Porovnanie výsledkov</strong></p><ul>${{scores}}</ul>${{warnings}}</div>`;
+        }} catch (error) {{
+          result.style.display = 'block';
+          result.innerHTML = `<div class="error">⚠️ ${{error.message}}</div>`;
+        }}
+      }}
+    </script>
+    """
+    return render_template_string(APP_TEMPLATE, content=content)
 
 
 @app.route("/izp", methods=["GET"])
@@ -3268,6 +3406,15 @@ def izp_calc():
         payload = request.get_json() or {}
         result = _compute_izp_projection(payload)
         return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route("/investicie/questionnaire", methods=["POST"])
+@login_required
+def investicie_questionnaire():
+    try:
+        return jsonify(_evaluate_investment_questionnaire(request.get_json() or {}))
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
