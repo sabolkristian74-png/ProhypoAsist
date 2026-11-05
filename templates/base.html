@@ -3,22 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>HypoVSPoistná suma</title>
+    <title>Hypo Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="/static/css/styles.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm mb-3">
+    <nav class="navbar navbar-expand-lg app-nav">
       <div class="container-fluid">
-        <a class="navbar-brand" href="#">HypoVSPoistná suma</a>
+        <a class="navbar-brand" href="#"><span class="brand-mark">H</span> Hypo<span>VSP</span></a>
         <div class="d-flex">
-          <button id="toggleDark" class="btn btn-outline-secondary btn-sm">Dark</button>
+          <button id="toggleDark" class="theme-toggle" type="button"><span class="theme-swatch"></span> Tmavý režim</button>
         </div>
       </div>
     </nav>
 
     <div class="container-fluid">
+      <a class="module-back" href="/">&#8592; Späť na prehľad</a>
       {% block content %}{% endblock %}
     </div>
 

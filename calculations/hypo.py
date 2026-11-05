@@ -45,7 +45,7 @@ def generate_amortization_schedule(
     increase_pct: float = 0.0,
     constant_insurance: float = 0.0,
 ) -> List[Dict]:
-    """Generate amortization schedule with insurance progression.
+    """Generate amortization schedule with annual insurance progression.
 
     Returns list of dicts for each month with keys:
     date, payment, interest, principal, balance, insurance, difference
@@ -72,11 +72,12 @@ def generate_amortization_schedule(
 
         balance = max(0.0, balance - principal)
 
-        # insurance decreases linearly to 0 over insurance_months
+        # The insured sum changes only on each policy anniversary.
         if insurance_months == 0:
             base_insurance = 0.0
         else:
-            factor = max(0.0, 1.0 - (m / insurance_months))
+            elapsed_years = min(insurance_years, m // 12)
+            factor = max(0.0, 1.0 - (elapsed_years / insurance_years))
             base_insurance = insurance_initial * factor
 
         # add constant insurance (flat amount) to the base insurance
@@ -106,7 +107,11 @@ def generate_amortization_schedule(
     return schedule
 
 
-def optimize_insurance_initial(schedule: List[Dict], insurance_years: int) -> Dict[str, Optional[float]]:
+def optimize_insurance_initial(
+    schedule: List[Dict],
+    insurance_years: int,
+    constant_insurance: float = 0.0,
+) -> Dict[str, Optional[float]]:
     """Compute minimal initial insurance so insurance never falls below balance.
 
     If insurance period shorter than loan period, return suggestion to extend period.
@@ -130,9 +135,9 @@ def optimize_insurance_initial(schedule: List[Dict], insurance_years: int) -> Di
 
     required = 0.0
     for idx, row in enumerate(schedule):
-        m = idx
-        denom = max(1e-12, 1.0 - (m / insurance_months))
-        candidate = row["balance"] / denom
+        elapsed_years = min(insurance_years, idx // 12)
+        denom = max(1e-12, 1.0 - (elapsed_years / insurance_years))
+        candidate = max(0.0, (row["balance"] - constant_insurance) / denom)
         if candidate > required:
             required = candidate
 

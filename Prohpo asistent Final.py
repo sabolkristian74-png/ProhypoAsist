@@ -5,7 +5,7 @@ from html import escape
 from datetime import datetime, timedelta, date
 from pathlib import Path
 from functools import wraps
-from flask import Flask, render_template_string, request, redirect, url_for, flash, session, jsonify
+from flask import Flask, render_template, render_template_string, request, redirect, url_for, flash, session, jsonify
 from calculations.hypo import (
     calculate_monthly_payment,
     generate_amortization_schedule,
@@ -58,6 +58,7 @@ app = Flask(__name__)
 app.secret_key = "prohypo-secret"
 FAQ_FILE_PATH = Path(__file__).resolve().parent / "data" / "faq_items.json"
 INTERESTING_NUMBERS_FILE_PATH = Path(__file__).resolve().parent / "data" / "zaujimave_cisla.json"
+DASHBOARD_DATA_FILE_PATH = Path(__file__).resolve().parent / "data" / "dashboard_production.json"
 RZP_OVERRIDES_FILE_PATH = Path(__file__).resolve().parent / "data" / "rzp_overrides.json"
 RZP_EDIT_PASSWORD = "1234"
 # Heslo na vstup do aplikácie - môžete ho zmeniť
@@ -87,31 +88,72 @@ APP_TEMPLATE = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ProHypo Asistent </title>
   <style>
-    body{font-family:Segoe UI,Arial,sans-serif;background:#f0f6fc;color:#1a2e5a;margin:0;padding:0;}
+    :root{--shell-bg:#FEFAF5;--shell-card:#fff;--shell-ink:#062151;--shell-blue:#0D2E6A;--shell-muted:#53647f;--shell-line:#dfe5ef;--shell-accent:#FF804F;--shell-soft:#ffe0d5;--shell-green:#dfeaf6;--shell-shadow:0 14px 40px rgba(6,33,81,.08);}
+    *{box-sizing:border-box;}
+    body{font-family:"Inter","Avenir Next","Segoe UI",sans-serif;background:var(--shell-bg);color:var(--shell-ink);margin:0;padding:0;letter-spacing:0;}
     .app-wrapper{display:flex;min-height:100vh;gap:0;}
-    .sidebar{width:200px;background:#fff;border-right:1px solid #ddd;padding:16px 0;box-shadow:2px 0 8px rgba(0,0,0,.08);}
-    .nav{display:flex;flex-direction:column;gap:2px;padding:0;margin:0;}
-    .nav a{display:block;padding:12px 16px;text-decoration:none;color:#29b6e8;font-weight:500;border-left:3px solid transparent;font-size:0.95rem;transition:all 0.2s;}
-    .nav a:hover{background:#f0f6fc;border-left-color:#29b6e8;color:#1e8fb7;}
-    .nav a[href*="logout"]{color:#c00;margin-top:auto;}
-    .main-content{flex:1;padding:20px;overflow-y:auto;}
-    .container{width:100%;max-width:none;margin:0;padding:0;box-sizing:border-box;}
-    .card{background:#fff;border-radius:8px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1);}
-    .app-shell{width:100%;max-width:none;margin:0;box-sizing:border-box;background:#fff;border-radius:8px;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,.1);}
-    input,select,textarea{width:100%;padding:8px;margin:4px 0 12px;border:1px solid #ccc;border-radius:4px;}
-    .btn{background:#29b6e8;color:white;padding:10px 14px;border:none;border-radius:4px;cursor:pointer;}
-    .btn:hover{background:#1e8fb7;}
-    .error{color:#c00;font-weight:bold;}
-    .result{background:#edf7f9;color:#046f8d;border:1px solid #29b6e8;padding:12px;border-radius:4px;white-space:pre-wrap;}
+    .sidebar{width:238px;flex:0 0 238px;background:linear-gradient(180deg,#062151 0%,#0D2E6A 100%);color:#FEFAF5;padding:24px 14px;box-shadow:8px 0 28px rgba(6,33,81,.14);}
+    .sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 12px 30px;color:#fff;font-size:1.04rem;font-weight:750;letter-spacing:-.03em;}
+    .sidebar-brand-mark{display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:#FF804F;color:#062151;}
+    .sidebar-brand span:last-child{color:#FF804F;}
+    .nav{display:flex;flex-direction:column;gap:4px;padding:0;margin:0;}
+    .nav-section{margin:17px 12px 7px;color:#77717f;font-size:.62rem;font-weight:700;letter-spacing:.13em;text-transform:uppercase;}
+    .nav a{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid transparent;border-radius:12px;text-decoration:none;color:#cbd8eb;font-weight:550;font-size:.79rem;transition:background 180ms ease,color 180ms ease,transform 180ms ease;}
+    .nav a:hover{background:rgba(254,250,245,.13);color:#FEFAF5;transform:translateX(2px);}
+    .nav a[href*="logout"]{margin-top:22px;color:#ffc1ae;border-top:1px solid rgba(254,250,245,.18);border-radius:0;padding-top:20px;}
+    .main-content{flex:1;min-width:0;padding:34px 3.2vw 56px;overflow-y:auto;}
+    .app-wrapper .sidebar{position:fixed;left:-220px;top:0;bottom:0;z-index:50;display:block;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(254,250,245,.35) transparent;transition:left 280ms cubic-bezier(.22,.8,.24,1);}
+    .app-wrapper .sidebar:hover{left:0;}
+    .app-wrapper .main-content{width:100%;padding:28px 4vw 56px;}
+    .app-wrapper .container{max-width:none;}
+    .module-back{display:inline-flex;align-items:center;gap:7px;margin:0 0 24px;color:var(--shell-muted);font-size:.78rem;font-weight:650;text-decoration:none;}
+    .module-back:hover{color:var(--shell-ink);}
+    .workspace-actions{display:flex;justify-content:flex-end;margin:0 0 16px;}
+    .workspace-theme{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--shell-line);border-radius:999px;background:var(--shell-card);color:var(--shell-ink);padding:8px 12px;font:600 .72rem inherit;cursor:pointer;transition:background 180ms ease,border-color 180ms ease;}
+    .workspace-theme:hover{border-color:var(--shell-accent);background:var(--shell-soft);}
+    .container{width:100%;max-width:1440px;margin:0 auto;padding:0;}
+    .app-shell{width:100%;max-width:none;margin:0;box-sizing:border-box;background:transparent;padding:0;}
+    .app-shell>h1{display:none;}
+    input,select,textarea{width:100%;padding:11px 13px;margin:4px 0 12px;border:1px solid var(--shell-line);border-radius:11px;background:#fff;color:var(--shell-ink);font:inherit;}
+    input:focus,select:focus,textarea:focus{outline:0;border-color:var(--shell-accent);box-shadow:0 0 0 3px rgba(255,128,79,.16);}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--shell-accent);color:var(--shell-ink);padding:11px 16px;border:0;border-radius:11px;cursor:pointer;font:600 .82rem inherit;transition:transform 180ms ease,background 180ms ease,box-shadow 180ms ease;}
+    .btn:hover{background:#e9683b;color:var(--shell-ink);transform:translateY(-2px);box-shadow:0 9px 18px rgba(6,33,81,.16);}
+    .error{color:#a5364b;font-weight:650;}
+    .result{background:#e8f3ed;color:#356b50;border:1px solid #c6e1d1;padding:14px;border-radius:13px;white-space:pre-wrap;}
     .copy-btn{margin-bottom:10px;}
     .faq-group{margin-bottom:20px;max-width:100%;margin-left:0;margin-right:auto;}
-    .faq-item{margin:0 0 10px;background:#fff;border:1px solid #d6e6f5;border-radius:6px;padding:8px;}
-    .faq-question{width:100%;text-align:left;background:#edf7f9;color:#046f8d;border:1px solid #29b6e8;padding:10px;border-radius:4px;cursor:pointer;font-weight:600;}
-    .faq-answer{display:none;background:#f8fbff;border:1px solid #d6e6f5;border-radius:4px;padding:10px;margin-top:6px;white-space:pre-wrap;}
-    .form-container{max-width:50%;margin:0;}
-    .top-1{background-color:#1976D2;color:white;font-weight:500;}
-    .top-2{background-color:#59B4E8;color:white;}
-    .top-3{background-color:#A0D8F0;color:#333;}
+    .faq-item{margin:0 0 10px;background:#fff;border:1px solid var(--shell-line);border-radius:14px;padding:8px;box-shadow:0 4px 14px rgba(38,29,61,.03);}
+    .faq-question{width:100%;text-align:left;background:#edf3fa;color:var(--shell-ink);border:0;padding:12px;border-radius:10px;cursor:pointer;font-weight:650;}
+    .faq-answer{display:none;background:#fff;border:1px solid var(--shell-line);border-radius:10px;padding:12px;margin-top:6px;white-space:pre-wrap;color:var(--shell-muted);}
+    .form-container{max-width:620px;margin:0;}
+    .top-1{background-color:#062151;color:#FEFAF5;font-weight:500;}
+    .top-2{background-color:#0D2E6A;color:#FEFAF5;}
+    .top-3{background-color:#FF804F;color:#062151;}
+    .page-kicker{margin:0 0 8px;color:var(--shell-muted);font-size:.7rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;}
+    .page-title{margin:0 0 10px;font-size:clamp(2rem,4vw,3rem);letter-spacing:-.05em;}
+    .page-subtitle{margin:0 0 28px;color:var(--shell-muted);font-size:.95rem;}
+    .home-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:34px 0 30px;}
+    .home-feature{position:relative;display:flex;flex-direction:column;min-height:190px;padding:22px;border-radius:20px;background:linear-gradient(145deg,#062151,#0D2E6A);color:#FEFAF5;text-decoration:none;transition:transform 180ms ease,box-shadow 180ms ease;}
+    .home-feature:hover{color:#FEFAF5;transform:translateY(-5px);box-shadow:0 18px 34px rgba(6,33,81,.16);}
+    .home-feature-green{background:#e8f0f8;color:#062151;}.home-feature-pink{background:#FF804F;color:#062151;}
+    .home-feature-icon{display:grid;place-items:center;width:42px;height:42px;margin-bottom:auto;border-radius:13px;background:rgba(254,250,245,.16);font-size:1.2rem;}.home-feature-green .home-feature-icon,.home-feature-pink .home-feature-icon{background:rgba(254,250,245,.52);}
+    .home-feature strong{max-width:210px;font-size:1rem;letter-spacing:-.025em;}.home-feature small{margin-top:7px;color:rgba(254,250,245,.76);font-size:.74rem;line-height:1.4;}.home-feature-green small,.home-feature-pink small{color:rgba(6,33,81,.7);}
+    .home-arrow{position:absolute;top:21px;right:22px;font-size:1.2rem;}.home-tools{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:20px 0;border-top:1px solid var(--shell-line);border-bottom:1px solid var(--shell-line);}.home-tools-copy{max-width:560px;margin:0;color:var(--shell-muted);font-size:.82rem;line-height:1.5;}.home-disclaimer{margin:24px 0 0;color:#a49eaa;font-size:.7rem;}
+    @media (max-width:900px){.sidebar{width:76px;flex-basis:76px;padding:18px 9px}.sidebar-brand{justify-content:center;padding:0 0 24px}.sidebar-brand-text,.nav-section{display:none}.nav a{justify-content:center;font-size:0;padding:12px}.nav a::first-letter{font-size:1.05rem}.nav a[href*="logout"]{margin-top:18px}.main-content{padding:26px 20px 44px}.app-wrapper .sidebar{left:-58px;width:76px;}.app-wrapper .sidebar:hover{left:0;}}
+    @media (max-width:620px){.app-wrapper{display:block}.sidebar{width:100%;padding:10px 12px;position:sticky;top:0;z-index:20}.sidebar-brand{display:none}.nav{flex-direction:row;overflow-x:auto;gap:5px}.nav a{flex:0 0 auto;padding:9px 11px;font-size:.7rem;white-space:nowrap}.nav a[href*="logout"]{margin:0;border:0;padding:9px 11px}.nav a::first-letter{font-size:inherit}.main-content{padding:24px 14px 40px}.page-title{font-size:2rem}.home-grid{grid-template-columns:1fr;gap:12px}.home-feature{min-height:150px}.home-tools{align-items:flex-start;flex-direction:column}.home-tools .btn{width:100%;}.app-wrapper .sidebar{left:calc(-100% + 48px);width:100%;position:fixed;}.app-wrapper .sidebar:hover{left:0;}}
+    @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:.01ms!important;animation-duration:.01ms!important;}}
+    .dark-mode{--shell-bg:#062151;--shell-card:#0D2E6A;--shell-ink:#FEFAF5;--shell-muted:#dfeaf6;--shell-line:rgba(254,250,245,.22);--shell-soft:rgba(255,128,79,.2);--shell-shadow:0 14px 40px rgba(0,0,0,.2);}
+    .dark-mode .main-content{background:#062151;color:#FEFAF5;}
+    .dark-mode .card,.dark-mode .faq-item,.dark-mode .faq-answer{background:#0D2E6A!important;border-color:rgba(254,250,245,.2)!important;color:#FEFAF5;}
+    .dark-mode input,.dark-mode select,.dark-mode textarea{background:#062151;color:#FEFAF5;border-color:rgba(254,250,245,.25);}
+    .dark-mode .result{background:#153f7e;color:#FEFAF5;border-color:#FF804F;}
+    .dark-mode .faq-question{background:#153f7e;color:#FEFAF5;}
+    .dark-mode .rzp-page{background:#062151;color:#FEFAF5;}
+    .dark-mode .rzp-toolbar,.dark-mode .rzp-filter-panel,.dark-mode .rzp-table-block,.dark-mode .rzp-table,.dark-mode .rzp-table th,.dark-mode .rzp-table td{background:#0D2E6A;color:#FEFAF5;border-color:rgba(254,250,245,.2);}
+    .dark-mode .rzp-tab,.dark-mode .rzp-button{background:#062151;color:#FEFAF5;border-color:rgba(254,250,245,.25);}
+    .dark-mode .rzp-tab.active,.dark-mode .rzp-button:hover{background:#FF804F;color:#062151;}
+    .dark-mode .rzp-section-row th{background:#062151;color:#FEFAF5;}
+    .dark-mode .rzp-note{background:#153f7e;color:#FEFAF5;border-color:#FF804F;}
   </style>
   <script>
     function copyToClipboard(elementId) {
@@ -169,10 +211,13 @@ APP_TEMPLATE = """<!doctype html>
   </script>
 </head>
 <body style="margin:0;padding:0;overflow-x:hidden;">
-<div class="app-wrapper">
+<div class="app-wrapper{% if request.path != '/' %} module-mode{% endif %}">
   <div class="sidebar">
+    <div class="sidebar-brand"><span class="sidebar-brand-mark">H</span><span class="sidebar-brand-text">ProHypo <span>Asistent</span></span></div>
     <div class="nav">
+      <div class="nav-section">Prehľad</div>
       <a href="{{ url_for('home') }}">🏠 Domov</a>
+      <div class="nav-section">Nástroje</div>
       <a href="{{ url_for('notice') }}">📅 Výpovedná lehota</a>
       <a href="{{ url_for('vypocetny_email') }}">📧 Výročný email</a>
       <a href="{{ url_for('vystupny_mail') }}">📤 Výstupný mail</a>
@@ -182,6 +227,7 @@ APP_TEMPLATE = """<!doctype html>
       <a href="{{ url_for('investicie') }}">📈 Investície</a>
       <a href="{{ url_for('rzp') }}">🛡️ RŽP</a>
       <a href="{{ url_for('tnu') }}">💉 TNU</a>
+      <div class="nav-section">Zdroje</div>
       <a href="{{ url_for('najcastejsie_otazky') }}">❓ FAQ</a>
       <a href="{{ url_for('zaujimave_cisla') }}">📈 Čísla</a>
       <a href="{{ url_for('logout') }}">🚪 Odhlásiť sa</a>
@@ -191,7 +237,8 @@ APP_TEMPLATE = """<!doctype html>
   <div class="main-content">
     <div class="container">
       <div class="app-shell">
-        <h1 style="margin-top:0;">ProHypo servis asistent</h1>
+        {% if request.path != '/' %}<a class="module-back" href="{{ url_for('home') }}">&#8592; Späť na prehľad</a>{% endif %}
+        <div class="workspace-actions"><button id="toggleDark" class="workspace-theme" type="button"><span aria-hidden="true">◐</span> Tmavý režim</button></div>
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
             {% for cat, msg in messages %}
@@ -205,6 +252,24 @@ APP_TEMPLATE = """<!doctype html>
   </div>
 </div>
 </body>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const shell = document.querySelector('.app-wrapper');
+    const toggle = document.getElementById('toggleDark');
+    if (!shell || !toggle) return;
+    const storageKey = 'prohypo-dark-mode';
+    const syncTheme = function (isDark) {
+      shell.classList.toggle('dark-mode', isDark);
+      toggle.innerHTML = isDark ? '<span aria-hidden="true">☀</span> Svetlý režim' : '<span aria-hidden="true">◐</span> Tmavý režim';
+    };
+    syncTheme(localStorage.getItem(storageKey) === 'true');
+    toggle.addEventListener('click', function () {
+      const isDark = !shell.classList.contains('dark-mode');
+      localStorage.setItem(storageKey, String(isDark));
+      syncTheme(isDark);
+    });
+  });
+</script>
 </html>"""
 
 
@@ -316,6 +381,38 @@ def load_interesting_numbers():
     return items
 
 
+DEFAULT_DASHBOARD_DATA = {
+    "labels": ["Jan", "Feb", "Mar", "Apr", "Máj", "Jún", "Júl", "Aug", "Sep", "Okt", "Nov", "Dec"],
+    "life": [42, 48, 55, 51, 63, 59, 68, 72, 76, 81, 86, 92],
+    "nonLife": [31, 35, 38, 42, 45, 43, 48, 52, 55, 58, 62, 66],
+    "contracts": [18, 22, 25, 24, 29, 27, 31, 34, 36, 39, 42, 45],
+}
+
+
+def load_dashboard_production():
+    if not DASHBOARD_DATA_FILE_PATH.exists():
+        return DEFAULT_DASHBOARD_DATA.copy()
+    try:
+        with DASHBOARD_DATA_FILE_PATH.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return DEFAULT_DASHBOARD_DATA.copy()
+
+    if not isinstance(data, dict):
+        return DEFAULT_DASHBOARD_DATA.copy()
+    result = {}
+    for key in ("labels", "life", "nonLife", "contracts"):
+        values = data.get(key)
+        if not isinstance(values, list) or len(values) != 12:
+            return DEFAULT_DASHBOARD_DATA.copy()
+        result[key] = values
+    if not all(isinstance(label, str) and label.strip() for label in result["labels"]):
+        return DEFAULT_DASHBOARD_DATA.copy()
+    if not all(isinstance(value, (int, float)) and value >= 0 for key in ("life", "nonLife", "contracts") for value in result[key]):
+        return DEFAULT_DASHBOARD_DATA.copy()
+    return result
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if session.get('logged_in') is True:
@@ -339,18 +436,28 @@ def login():
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ProHypo Asistent - Prihlásenie</title>
   <style>
-    body{font-family:Segoe UI,Arial,sans-serif;background:#f0f6fc;color:#1a2e5a;margin:0;padding:0;display:flex;align-items:center;justify-content:center;min-height:100vh;}
-    .login-container{background:#fff;border-radius:8px;padding:40px;box-shadow:0 2px 8px rgba(0,0,0,.15);max-width:400px;width:100%;}
-    h1{text-align:center;color:#1a2e5a;margin-bottom:30px;}
-    input{width:100%;padding:10px;margin:10px 0 20px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;}
-    .btn{background:#29b6e8;color:white;padding:11px 15px;border:none;border-radius:4px;cursor:pointer;width:100%;font-weight:bold;}
-    .btn:hover{background:#1e8fb7;}
-    .error{color:#c00;text-align:center;margin-bottom:15px;font-weight:bold;}
+    :root{--ink:#062151;--blue:#0D2E6A;--muted:#53647f;--line:#dfe5ef;--accent:#FF804F;}
+    *{box-sizing:border-box;}
+    body{font-family:"Inter","Avenir Next","Segoe UI",sans-serif;background:#FEFAF5;color:var(--ink);margin:0;display:grid;place-items:center;min-height:100vh;padding:24px;}
+    body::before{content:"";position:fixed;inset:0;background:radial-gradient(circle at 12% 18%,rgba(255,128,79,.16),transparent 30%),linear-gradient(145deg,rgba(6,33,81,.08),transparent 52%);pointer-events:none;}
+    .login-container{position:relative;background:#fff;border:1px solid rgba(231,227,235,.9);border-radius:24px;padding:38px;box-shadow:0 22px 70px rgba(38,29,61,.12);max-width:430px;width:100%;}
+    .login-mark{display:grid;place-items:center;width:46px;height:46px;margin:0 auto 20px;border-radius:15px;background:#FF804F;color:var(--ink);font-size:1.35rem;font-weight:800;}
+    h1{text-align:center;font-size:1.85rem;letter-spacing:-.05em;margin:0 0 8px;}
+    .login-copy{text-align:center;color:var(--muted);font-size:.86rem;margin:0 0 28px;}
+    label{display:block;margin-bottom:7px;color:var(--muted);font-size:.75rem;font-weight:650;}
+    input{width:100%;padding:13px;margin:0 0 18px;border:1px solid var(--line);border-radius:12px;box-sizing:border-box;font:inherit;}
+    input:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px rgba(255,128,79,.16);}
+    .btn{background:var(--accent);color:var(--ink);padding:13px 15px;border:0;border-radius:12px;cursor:pointer;width:100%;font-weight:700;}
+    .btn:hover{background:#e9683b;}
+    .error{color:#a5364b;text-align:center;margin:0 0 15px;font-weight:650;font-size:.82rem;}
+    .login-foot{text-align:center;margin:24px 0 0;color:#a49eaa;font-size:.68rem;}
   </style>
 </head>
 <body>
   <div class="login-container">
-    <h1>🔐 ProHypo Asistent</h1>
+    <div class="login-mark">H</div>
+    <h1>ProHypo Asistent</h1>
+    <p class="login-copy">Váš pracovný priestor pre finančné modely.</p>
     {% with messages = get_flashed_messages() %}
       {% if messages %}
         {% for msg in messages %}
@@ -359,10 +466,11 @@ def login():
       {% endif %}
     {% endwith %}
     <form method="post">
-      <label for="password" style="display:block;margin-bottom:10px;">Heslo:</label>
+      <label for="password">Prístupové heslo</label>
       <input type="password" id="password" name="password" placeholder="Zadajte heslo" required autofocus>
       <button class="btn" type="submit">Prihlásiť sa</button>
     </form>
+    <p class="login-foot">Bezpečný interný pracovný priestor</p>
   </div>
 </body>
 </html>"""
@@ -380,25 +488,93 @@ def logout():
 @app.route("/")
 @login_required
 def home():
-    content = (
-        "<div style='display:flex; flex-direction:column; min-height:60vh;'>"
-        "<div><p>Víta ťa ProHypo Asistent. Vyber si modul v ktorom chceš pracovať.</p></div>"
-        "<div style='margin-top:auto; padding-top:30px; border-top:1px solid #e0e0e0;'>"
-        "<button type='button' class='btn' onclick=\"toggleFeedbackForm()\">Mám nápad / Našiel som chybu</button>"
-        "<div id='feedbackContainer' style='display:none; margin-top:15px; transition:all 0.3s ease;'>"
-        "<p style='font-size:0.9rem;color:#666;'>Našiel si chybu alebo máš nápad na vylepšenie? Napíš nám o tom!</p>"
-        "<form>"
-        "<label for='chybatext' style='display:block;margin-bottom:8px;font-weight:bold;'>Tvoja správa:</label>"
-        "<textarea id='chybatext' placeholder='Opíš chybu alebo podaj nápad na zlepšenie...' style='min-height:120px;'></textarea>"
-        "<button type='button' class='btn' onclick=\"openEmailInOutlook('chybatext', 'kristiansamuel.sabol@prohypo.sk', 'Chyba alebo zmena v aplikácií')\">Poslať na programátora</button>"
-        "</form>"
-        "</div>"
-        "<div style='margin-top:40px; padding-top:20px; border-top:1px solid #f0f0f0; font-size:0.75rem; color:#999; line-height:1.6;'>"
-        "<p style='margin:0;'>⚠️ <strong>Dôležitý disclaimer:</strong> Aplikácia je v skúšobnej verzií a je určená výlučne pre členov skupiny Špecialistov ProHypo s.r.o.. Zneužitie, prípadné posúvanie kódu iným osobám ako bola určená je zakázané! V kóde sa nachádzajú podobnosti s inými aplikáciami tak preto poprosím o diskrétnosť.</p>"
-        "</div>"
-        "</div>"
-        "</div>"
-    )
+    dashboard_data_json = json.dumps(load_dashboard_production(), ensure_ascii=False)
+    content = """
+    <style>
+      .home-dashboard{--dash-bg:#062151;--dash-panel:rgba(13,46,106,.72);--dash-line:rgba(254,250,245,.14);--dash-text:#FEFAF5;--dash-muted:#afc0d8;--dash-accent:#FF804F;margin:0;padding:30px;border-radius:26px;background:radial-gradient(circle at 88% 0%,rgba(255,128,79,.16),transparent 28%),linear-gradient(145deg,#062151,#0D2E6A);color:var(--dash-text);box-shadow:0 24px 70px rgba(6,33,81,.22);}
+      .home-dashboard *{box-sizing:border-box;}
+      .dashboard-top{display:flex;justify-content:space-between;align-items:flex-start;gap:22px;margin-bottom:28px;}
+      .dashboard-brand{display:flex;align-items:center;gap:11px;margin-bottom:22px;color:var(--dash-text);font-size:.92rem;font-weight:750;letter-spacing:-.02em;}
+      .dashboard-brand-mark{display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:var(--dash-accent);color:#062151;}
+      .dashboard-kicker{margin:0 0 7px;color:#ffb49d;font-size:.68rem;font-weight:750;letter-spacing:.14em;text-transform:uppercase;}
+      .dashboard-title{margin:0;color:var(--dash-text);font-size:clamp(1.8rem,4vw,2.7rem);font-weight:750;letter-spacing:-.05em;}
+      .dashboard-subtitle{margin:9px 0 0;color:var(--dash-muted);font-size:.84rem;}
+      .dashboard-clock{min-width:190px;padding:14px 16px;border:1px solid var(--dash-line);border-radius:16px;background:rgba(254,250,245,.07);text-align:right;}
+      .dashboard-date{color:var(--dash-muted);font-size:.72rem;}.dashboard-time{margin-top:5px;color:var(--dash-text);font-size:1.55rem;font-weight:700;letter-spacing:-.04em;}
+      .kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px;}
+      .kpi-card{padding:18px;border:1px solid var(--dash-line);border-radius:18px;background:var(--dash-panel);box-shadow:0 12px 30px rgba(0,0,0,.1);}
+      .kpi-card-primary{background:var(--dash-accent);color:#062151;}.kpi-label{display:flex;justify-content:space-between;gap:8px;color:var(--dash-muted);font-size:.72rem;font-weight:650;}.kpi-card-primary .kpi-label{color:#062151;}.kpi-icon{font-size:1rem;}.kpi-value{margin-top:22px;color:var(--dash-text);font-size:1.65rem;font-weight:750;letter-spacing:-.05em;}.kpi-card-primary .kpi-value{color:#062151;}.kpi-note{margin-top:6px;color:var(--dash-muted);font-size:.68rem;}.kpi-card-primary .kpi-note{color:rgba(6,33,81,.72);}.kpi-change{color:#ffb49d;font-size:.7rem;font-weight:700;}.kpi-card-primary .kpi-change{color:#062151;}
+      .dashboard-charts{display:grid;grid-template-columns:1.35fr 1fr;gap:14px;}.chart-panel{min-width:0;padding:18px;border:1px solid var(--dash-line);border-radius:18px;background:var(--dash-panel);}.chart-panel-wide{grid-column:span 2;}.chart-heading{display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:12px;}.chart-heading h3{margin:0;color:var(--dash-text);font-size:.9rem;}.chart-heading small{color:var(--dash-muted);font-size:.67rem;}.chart-canvas{position:relative;height:230px;}.chart-panel-wide .chart-canvas{height:260px;}.chart-legend{display:flex;gap:14px;margin-top:8px;color:var(--dash-muted);font-size:.68rem;}.legend-dot{display:inline-block;width:7px;height:7px;margin-right:5px;border-radius:50%;background:var(--dash-accent);}.legend-dot-blue{background:#8aa8c8;}
+      .module-launcher{margin-top:22px;padding-top:22px;border-top:1px solid var(--dash-line);}.module-launcher h2{margin:0;color:var(--dash-text);font-size:1rem;}.module-launcher-copy{margin:7px 0 16px;color:var(--dash-muted);font-size:.76rem;}.module-links{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;}.module-link{display:flex;align-items:center;gap:9px;padding:11px 12px;border:1px solid var(--dash-line);border-radius:12px;background:rgba(254,250,245,.06);color:var(--dash-text);font-size:.72rem;font-weight:650;text-decoration:none;transition:background 180ms ease,transform 180ms ease,border-color 180ms ease;}.module-link:hover{border-color:var(--dash-accent);background:rgba(255,128,79,.16);color:var(--dash-text);transform:translateY(-2px);}.module-link-icon{font-size:.95rem;}.dashboard-feedback{display:none;margin-top:16px;padding:16px;border:1px solid var(--dash-line);border-radius:14px;background:rgba(254,250,245,.06);}.dashboard-feedback label{color:var(--dash-muted);}.dashboard-feedback textarea{background:#062151;color:var(--dash-text);border-color:var(--dash-line);}.dashboard-feedback .btn{width:auto;}.dashboard-foot{margin:20px 0 0;color:rgba(254,250,245,.52);font-size:.65rem;}
+      .welcome-motion{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:linear-gradient(145deg,#062151,#0D2E6A);color:#FEFAF5;animation:welcome-out 700ms ease 1.65s forwards;pointer-events:none;}
+      .welcome-motion-inner{text-align:center;animation:welcome-in 700ms cubic-bezier(.22,.8,.24,1) both;}
+      .welcome-motion-mark{display:grid;place-items:center;width:68px;height:68px;margin:0 auto 20px;border-radius:22px;background:#FF804F;color:#062151;font-size:1.9rem;font-weight:800;box-shadow:0 12px 35px rgba(255,128,79,.28);animation:welcome-pulse 1.2s ease-in-out infinite;}
+      .welcome-motion h2{margin:0;color:#FEFAF5;font-size:clamp(1.7rem,4vw,2.7rem);letter-spacing:-.05em;}
+      .welcome-motion p{margin:10px 0 0;color:#afc0d8;font-size:.86rem;}
+      .dashboard-reveal{animation:dashboard-in 800ms ease 1.55s both;}
+      @keyframes welcome-in{from{opacity:0;transform:translateY(16px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+      @keyframes welcome-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+      @keyframes welcome-out{to{opacity:0;visibility:hidden}}
+      @keyframes dashboard-in{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+      @media(prefers-reduced-motion:reduce){.welcome-motion{animation-delay:0s;animation-duration:200ms}.welcome-motion-inner,.dashboard-reveal{animation:none}}
+      @media(max-width:1000px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.module-links{grid-template-columns:repeat(3,1fr)}}
+      @media(max-width:700px){.home-dashboard{padding:20px;border-radius:20px}.dashboard-top{flex-direction:column}.dashboard-clock{width:100%;text-align:left}.dashboard-charts{grid-template-columns:1fr}.chart-panel-wide{grid-column:auto}.kpi-grid{grid-template-columns:1fr 1fr}.module-links{grid-template-columns:1fr 1fr}}
+      @media(max-width:460px){.kpi-grid,.module-links{grid-template-columns:1fr}.dashboard-title{font-size:1.8rem}.chart-canvas,.chart-panel-wide .chart-canvas{height:220px}}
+    </style>
+    <div class="welcome-motion" role="status" aria-live="polite">
+      <div class="welcome-motion-inner">
+        <div class="welcome-motion-mark">H</div>
+        <h2>Víta ťa aplikácia ProHypo Asistent</h2>
+        <p>Pripravujeme tvoj produkčný prehľad...</p>
+      </div>
+    </div>
+    <section class="home-dashboard dashboard-reveal">
+      <header class="dashboard-top">
+        <div>
+          <div class="dashboard-brand"><span class="dashboard-brand-mark">H</span> ProHypo Asistent</div>
+          <p class="dashboard-kicker">Interný prehľad produkcie</p>
+          <h1 class="dashboard-title">Produkčný dashboard</h1>
+          <p class="dashboard-subtitle">Víta ťa ProHypo Asistent. Vyber si modul, v ktorom chceš pracovať.</p>
+        </div>
+        <div class="dashboard-clock"><div class="dashboard-date" id="dashboardDate">--</div><div class="dashboard-time" id="dashboardTime">--:--:--</div></div>
+      </header>
+      <section class="kpi-grid" aria-label="Hlavné metriky">
+        <article class="kpi-card kpi-card-primary"><div class="kpi-label">Celková produkcia <span class="kpi-icon">↗</span></div><div class="kpi-value" id="kpiTotal">--</div><div class="kpi-note"><span class="kpi-change">+12,4 %</span> oproti minulému obdobiu</div></article>
+        <article class="kpi-card"><div class="kpi-label">Životná produkcia <span class="kpi-icon">◈</span></div><div class="kpi-value" id="kpiLife">--</div><div class="kpi-note">stabilný rast portfólia</div></article>
+        <article class="kpi-card"><div class="kpi-label">Neživotná produkcia <span class="kpi-icon">◆</span></div><div class="kpi-value" id="kpiNonLife">--</div><div class="kpi-note">aktuálny rok</div></article>
+        <article class="kpi-card"><div class="kpi-label">Počet zmlúv <span class="kpi-icon">＋</span></div><div class="kpi-value" id="kpiContracts">--</div><div class="kpi-note">spracované prípady</div></article>
+      </section>
+      <section class="dashboard-charts" aria-label="Produkčné grafy">
+        <article class="chart-panel chart-panel-wide"><div class="chart-heading"><div><h3>Produkcia v čase</h3><small>Životná a neživotná produkcia podľa mesiacov</small></div><small>2026</small></div><div class="chart-canvas"><canvas id="lifeNonLifeChart"></canvas></div><div class="chart-legend"><span><i class="legend-dot"></i>Životná</span><span><i class="legend-dot legend-dot-blue"></i>Neživotná</span></div></article>
+        <article class="chart-panel"><div class="chart-heading"><div><h3>Životná produkcia</h3><small>mesačný vývoj</small></div></div><div class="chart-canvas"><canvas id="lifeChart"></canvas></div></article>
+        <article class="chart-panel"><div class="chart-heading"><div><h3>Neživotná produkcia</h3><small>mesačný vývoj</small></div></div><div class="chart-canvas"><canvas id="nonLifeChart"></canvas></div></article>
+        <article class="chart-panel"><div class="chart-heading"><div><h3>Podiel produkcie</h3><small>životná vs. neživotná</small></div></div><div class="chart-canvas"><canvas id="shareChart"></canvas></div></article>
+      </section>
+      <section class="module-launcher"><h2>Pracovné modely</h2><p class="module-launcher-copy">Otvorte samostatnú pracovnú obrazovku pre konkrétny výpočet alebo nástroj.</p><div class="module-links">
+        <a class="module-link" href="/hypo"><span class="module-link-icon">🏦</span>Hypo VS poistná suma</a><a class="module-link" href="/izp"><span class="module-link-icon">📊</span>Investičné životné poistenie</a><a class="module-link" href="/rzp"><span class="module-link-icon">🛡️</span>Rizikové životné poistenie</a><a class="module-link" href="/tnu"><span class="module-link-icon">💉</span>Trvalé následky úrazu</a><a class="module-link" href="/investicie"><span class="module-link-icon">📈</span>Investície</a><a class="module-link" href="/notice"><span class="module-link-icon">📅</span>Výpovedná lehota</a><a class="module-link" href="/vypocetny_email"><span class="module-link-icon">📧</span>Výročný email</a><a class="module-link" href="/vystupny_mail"><span class="module-link-icon">📤</span>Výstupný mail</a><a class="module-link" href="/backoffice"><span class="module-link-icon">⚙️</span>Backoffice email</a><a class="module-link" href="/najcastejsie_otazky"><span class="module-link-icon">❓</span>Najčastejšie otázky</a><a class="module-link" href="/zaujimave_cisla"><span class="module-link-icon">🔢</span>Zaujímavé čísla</a>
+      </div></section>
+      <div class="dashboard-tools"><button type="button" class="workspace-theme" onclick="toggleFeedbackForm()">Mám nápad alebo chybu</button><div id="feedbackContainer" class="dashboard-feedback"><p class="module-launcher-copy">Našli ste chybu alebo máte nápad na vylepšenie? Napíšte nám o tom.</p><form><label for="chybatext">Vaša správa</label><textarea id="chybatext" placeholder="Opíšte chybu alebo návrh..." style="min-height:120px;"></textarea><button type="button" class="btn" onclick="openEmailInOutlook('chybatext', 'kristiansamuel.sabol@prohypo.sk', 'Chyba alebo zmena v aplikácii')">Poslať na programátora</button></form></div></div>
+      <p class="dashboard-foot">Interná pracovná aplikácia pre členov skupiny Špecialistov ProHypo s.r.o.</p>
+    </section>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+      const productionData = __DASHBOARD_DATA__;
+      const formatProduction = value => `${Number(value).toLocaleString('sk-SK')} tis. €`;
+      const totalLife = productionData.life.reduce((sum,value)=>sum + value,0);
+      const totalNonLife = productionData.nonLife.reduce((sum,value)=>sum + value,0);
+      document.getElementById('kpiLife').textContent = formatProduction(totalLife);
+      document.getElementById('kpiNonLife').textContent = formatProduction(totalNonLife);
+      document.getElementById('kpiTotal').textContent = formatProduction(totalLife + totalNonLife);
+      document.getElementById('kpiContracts').textContent = productionData.contracts.reduce((sum,value)=>sum + value,0).toLocaleString('sk-SK');
+      const chartDefaults = { responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, plugins:{legend:{display:false}}, scales:{x:{grid:{display:false},ticks:{color:'#afc0d8'}},y:{grid:{color:'rgba(254,250,245,.1)'},ticks:{color:'#afc0d8',callback:value=>`${value}k`}}} };
+      new Chart(document.getElementById('lifeNonLifeChart'), {type:'line',data:{labels:productionData.labels,datasets:[{label:'Životná',data:productionData.life,borderColor:'#FF804F',backgroundColor:'rgba(255,128,79,.12)',fill:true,tension:.35,pointRadius:0,borderWidth:3},{label:'Neživotná',data:productionData.nonLife,borderColor:'#8aa8c8',backgroundColor:'rgba(138,168,200,.08)',fill:true,tension:.35,pointRadius:0,borderWidth:2}]},options:chartDefaults});
+      new Chart(document.getElementById('lifeChart'), {type:'bar',data:{labels:productionData.labels,datasets:[{label:'Životná produkcia',data:productionData.life,backgroundColor:'#FF804F',borderRadius:5}]},options:chartDefaults});
+      new Chart(document.getElementById('nonLifeChart'), {type:'bar',data:{labels:productionData.labels,datasets:[{label:'Neživotná produkcia',data:productionData.nonLife,backgroundColor:'#8aa8c8',borderRadius:5}]},options:chartDefaults});
+      new Chart(document.getElementById('shareChart'), {type:'doughnut',data:{labels:['Životná','Neživotná'],datasets:[{data:[totalLife,totalNonLife],backgroundColor:['#FF804F','#8aa8c8'],borderColor:'#0D2E6A',borderWidth:4}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'bottom',labels:{color:'#FEFAF5',usePointStyle:true,padding:16}}}}});
+      const updateDashboardClock = () => { const now = new Date(); document.getElementById('dashboardDate').textContent = now.toLocaleDateString('sk-SK',{weekday:'long',day:'numeric',month:'long',year:'numeric'}); document.getElementById('dashboardTime').textContent = now.toLocaleTimeString('sk-SK'); };
+      updateDashboardClock(); setInterval(updateDashboardClock,1000);
+    </script>
+    """.replace("__DASHBOARD_DATA__", dashboard_data_json)
     return render_template_string(APP_TEMPLATE, content=content)
 
 
@@ -930,6 +1106,51 @@ def zaujimave_cisla():
     content = "<h2>Zaujímavé čísla</h2>"
     if session.get('is_admin'):
       content += "<div style='margin-bottom:16px;'><button class='btn' type='button' onclick='enableContentEditing(\"numbers\")'>Upraviť údaje</button></div>"
+      dashboard_data = load_dashboard_production()
+      dashboard_rows = "".join(
+          f"<tr><td><input class='dashboard-label' value='{escape(dashboard_data['labels'][index])}'></td>"
+          f"<td><input type='number' min='0' step='0.01' class='dashboard-life' value='{dashboard_data['life'][index]}'></td>"
+          f"<td><input type='number' min='0' step='0.01' class='dashboard-nonlife' value='{dashboard_data['nonLife'][index]}'></td>"
+          f"<td><input type='number' min='0' step='1' class='dashboard-contracts' value='{dashboard_data['contracts'][index]}'></td></tr>"
+          for index in range(12)
+      )
+      content += f"""
+      <div style='margin-bottom:22px;padding:16px;background:#edf3fa;border:1px solid #dfe5ef;border-radius:12px;'>
+        <h3 style='margin-top:0;'>Údaje pre produkčný dashboard</h3>
+        <p style='margin-top:0;'>Tieto údaje sa zobrazujú v grafoch a kartách na úvodnej stránke. Produkcia je v tisícoch eur.</p>
+        <div style='overflow-x:auto;'>
+          <table style='width:100%;border-collapse:collapse;'>
+            <thead><tr><th>Mesiac</th><th>Životná produkcia (tis. €)</th><th>Neživotná produkcia (tis. €)</th><th>Počet zmlúv</th></tr></thead>
+            <tbody>{dashboard_rows}</tbody>
+          </table>
+        </div>
+        <button class='btn' type='button' id='dashboardDataSaveButton' onclick='saveDashboardData()'>Uložiť dashboard</button>
+      </div>
+      <script>
+        async function saveDashboardData() {{
+          const labels = Array.from(document.querySelectorAll('.dashboard-label')).map(input => input.value.trim());
+          const life = Array.from(document.querySelectorAll('.dashboard-life')).map(input => Number(input.value));
+          const nonLife = Array.from(document.querySelectorAll('.dashboard-nonlife')).map(input => Number(input.value));
+          const contracts = Array.from(document.querySelectorAll('.dashboard-contracts')).map(input => Number(input.value));
+          if (labels.length !== 12 || labels.some(label => !label) || [life, nonLife, contracts].some(values => values.length !== 12 || values.some(value => !Number.isFinite(value) || value < 0))) {{
+            alert('Vyplňte všetkých 12 mesiacov platnými nezápornými hodnotami.');
+            return;
+          }}
+          const response = await fetch('/content/admin/save-dashboard', {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{labels, life, nonLife, contracts}})
+          }});
+          const result = await response.json();
+          if (!response.ok) {{
+            alert(result.error || 'Údaje sa nepodarilo uložiť.');
+            return;
+          }}
+          alert('Údaje dashboardu boli uložené.');
+          window.location.reload();
+        }}
+      </script>
+      """
     section_options = "".join(
         f"<option value='{escape(section)}'>{escape(section)}</option>"
         for section in groups
@@ -1026,6 +1247,36 @@ def save_content_edits():
   return jsonify({"ok": True, "saved": len(items)})
 
 
+@app.route("/content/admin/save-dashboard", methods=["POST"])
+@login_required
+def save_dashboard_data():
+  if session.get("is_admin") is not True:
+    return jsonify({"error": "Administrátorské oprávnenie je potrebné."}), 403
+
+  payload = request.get_json(silent=True) or {}
+  labels = payload.get("labels")
+  series = {key: payload.get(key) for key in ("life", "nonLife", "contracts")}
+  if not isinstance(labels, list) or len(labels) != 12 or any(not isinstance(label, str) or not label.strip() for label in labels):
+    return jsonify({"error": "Zadajte názvy všetkých 12 mesiacov."}), 400
+  if any(
+      not isinstance(values, list)
+      or len(values) != 12
+      or any(not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0 for value in values)
+      for values in series.values()
+  ):
+    return jsonify({"error": "Produkcia a počet zmlúv musia byť nezáporné čísla."}), 400
+
+  data = {"labels": [label.strip() for label in labels], **series}
+  try:
+    temporary_path = DASHBOARD_DATA_FILE_PATH.with_suffix(".tmp")
+    with temporary_path.open("w", encoding="utf-8") as file:
+      json.dump(data, file, ensure_ascii=False, indent=2)
+    temporary_path.replace(DASHBOARD_DATA_FILE_PATH)
+  except OSError:
+    return jsonify({"error": "Údaje sa nepodarilo zapísať na disk."}), 500
+  return jsonify({"ok": True})
+
+
 @app.route("/hypo", methods=["GET"])
 @login_required
 # ============================================================================
@@ -1093,13 +1344,13 @@ def hypo():
             <canvas id="hypo_chart"></canvas>
           </div>
           <div class="card" style="padding:16px;">
-            <h4 style="margin-top:0;">Tabuľka splátok (prvých 50 mesiacov)</h4>
+            <h4 style="margin-top:0;">Ročný prehľad splátok</h4>
             <div style="max-height:300px;overflow-y:auto;border:1px solid #eee;border-radius:4px;">
               <table style="width:100%;font-size:0.85rem;border-collapse:collapse;">
                 <thead style="background:#f5f5f5;position:sticky;top:0;">
                   <tr>
-                    <th style="padding:8px;text-align:left;border-bottom:1px solid #ddd;">Mesiac</th>
-                    <th style="padding:8px;text-align:right;border-bottom:1px solid #ddd;">Splátka</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid #ddd;">Rok</th>
+                    <th style="padding:8px;text-align:right;border-bottom:1px solid #ddd;">Zaplatené splátky</th>
                     <th style="padding:8px;text-align:right;border-bottom:1px solid #ddd;">Úrok</th>
                     <th style="padding:8px;text-align:right;border-bottom:1px solid #ddd;">Zostatok</th>
                     <th style="padding:8px;text-align:right;border-bottom:1px solid #ddd;">Poistenie</th>
@@ -1164,7 +1415,27 @@ def hypo():
         document.getElementById('summary_balance').innerText = fmt(data.schedule[0].balance);
         document.getElementById('summary_insurance').innerText = fmt(data.schedule[0].insurance_total || data.schedule[0].insurance);
         
-        const diffs = data.schedule.map(r => r.difference);
+        const annualRows = [];
+        data.schedule.forEach(row => {
+          const yearIndex = Math.floor((Number(row.month) - 1) / 12);
+          if (!annualRows[yearIndex]) {
+            annualRows[yearIndex] = {
+              year: yearIndex + 1,
+              payment: 0,
+              interest: 0,
+              balance: 0,
+              insurance: 0,
+              difference: 0
+            };
+          }
+          const annual = annualRows[yearIndex];
+          annual.payment += Number(row.payment || 0);
+          annual.interest += Number(row.interest || 0);
+          annual.balance = Number(row.balance || 0);
+          annual.insurance = Number(row.insurance_total || row.insurance || 0);
+          annual.difference = Number(row.difference || 0);
+        });
+        const diffs = annualRows.map(r => r.difference);
         const negDiffs = diffs.filter(d => d < 0).map(d => Math.abs(d));
         const maxUnder = negDiffs.length ? Math.max(...negDiffs) : 0;
         document.getElementById('summary_diff').innerText = maxUnder > 0 ? '-' + fmt(maxUnder) : '—';
@@ -1173,8 +1444,8 @@ def hypo():
         const alerts = document.getElementById('hypo_alerts');
         if (maxUnder > 0) {
           const minIdx = diffs.findIndex(v => v < 0);
-          const minDate = data.schedule[minIdx] ? data.schedule[minIdx].date : '—';
-          let msg = `Klient je poistený pod potrebu úverového zostatku. Maximálne "podpoistenie" je ${fmt(maxUnder)} (mesiac ${minDate}).`;
+          const underinsuredYear = annualRows[minIdx] ? annualRows[minIdx].year : '—';
+          let msg = `Klient je poistený pod potrebu úverového zostatku. Maximálne "podpoistenie" je ${fmt(maxUnder)} (rok ${underinsuredYear}).`;
           if (data.optimized && data.optimized.required_initial) {
             const recommend = Math.max(0, data.optimized.required_initial - data.schedule[0].insurance);
             msg += ` Odporúčame navýšiť PS o ${fmt(recommend)}, alebo nastaviť počiatočnú PS na ${fmt(data.optimized.required_initial)}.`;
@@ -1194,7 +1465,13 @@ def hypo():
         if (data.optimized && data.optimized.required_initial) {
           const init = data.optimized.required_initial;
           const n = data.schedule.length;
-          optimized = Array.from({length: n}, (_, i) => Math.round(init * Math.max(0, 1 - i/n) * 100) / 100);
+          const constant = Number(document.getElementById('constant_insurance').value || 0);
+          const insuranceYears = Number(document.getElementById('insurance_years').value || 0);
+          optimized = Array.from({length: n}, (_, i) => {
+            const elapsedYears = insuranceYears ? Math.min(insuranceYears, Math.floor(i / 12)) : 0;
+            const factor = insuranceYears ? Math.max(0, 1 - elapsedYears / insuranceYears) : 0;
+            return Math.round((init * factor + constant) * 100) / 100;
+          });
         }
 
         const ctx = document.getElementById('hypo_chart').getContext('2d');
@@ -1265,11 +1542,11 @@ def hypo():
         // Table
         const tbody = document.getElementById('hypo_table_body');
         tbody.innerHTML = '';
-        data.schedule.slice(0, 50).forEach(row => {
+        annualRows.forEach(row => {
           const tr = document.createElement('tr');
           if (row.difference < 0) tr.style.background = '#ffecec';
           tr.innerHTML = `
-            <td style="padding:6px;border-bottom:1px solid #eee;">${row.month}</td>
+            <td style="padding:6px;border-bottom:1px solid #eee;">${row.year}. rok</td>
             <td style="padding:6px;border-bottom:1px solid #eee;text-align:right;">${fmt(row.payment)}</td>
             <td style="padding:6px;border-bottom:1px solid #eee;text-align:right;">${fmt(row.interest)}</td>
             <td style="padding:6px;border-bottom:1px solid #eee;text-align:right;">${fmt(row.balance)}</td>
@@ -1289,7 +1566,7 @@ def hypo():
       });
     </script>
   """
-    return render_template_string(APP_TEMPLATE, content=content)
+    return render_template("index.html")
 
 
 @app.route("/rzp", methods=["GET"])
@@ -2750,31 +3027,39 @@ def rzp():
   content = f"""
     <style>
       .rzp-page {{
-        margin: -24px -24px 0;
-        background: #ffffff;
-        color: #222;
+        margin: 0;
+        background: #FEFAF5;
+        color: #062151;
       }}
       .rzp-hero {{
-        background: linear-gradient(180deg, #33b9ff 0%, #18a5ff 100%);
-        color: #fff;
-        text-align: center;
-        padding: 12px 20px 14px;
-        font-size: 1.95rem;
+        background: linear-gradient(110deg, #062151 0%, #0D2E6A 100%);
+        color: #FEFAF5;
+        text-align: left;
+        padding: 26px 30px 28px;
+        border-radius: 22px;
+        font-size: 2rem;
         line-height: 1.1;
         font-weight: 700;
-        letter-spacing: 0.2px;
+        letter-spacing: -0.04em;
+        box-shadow: 0 14px 36px rgba(6,33,81,.14);
       }}
       .rzp-toolbar {{
         display: flex;
-        justify-content: center;
+        justify-content: space-between;
+        align-items: center;
         flex-wrap: wrap;
-        gap: 16px;
-        padding: 14px 20px 18px;
+        gap: 12px;
+        margin: 18px 0;
+        padding: 12px;
+        border: 1px solid #dfe5ef;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: 0 8px 24px rgba(6,33,81,.05);
       }}
       .rzp-tabs {{
         display: inline-flex;
-        border: 1px solid #6b6b6b;
-        border-radius: 999px;
+        border: 1px solid #dfe5ef;
+        border-radius: 11px;
         overflow: hidden;
         background: #fff;
       }}
@@ -2782,40 +3067,43 @@ def rzp():
         appearance: none;
         border: 0;
         background: #fff;
-        color: #444;
-        font-size: 1rem;
-        padding: 11px 20px;
+        color: #53647f;
+        font-size: .78rem;
+        padding: 11px 16px;
         cursor: pointer;
-        border-right: 1px solid #6b6b6b;
+        border-right: 1px solid #dfe5ef;
+        font-weight: 650;
       }}
       .rzp-tab:last-child {{
         border-right: 0;
       }}
       .rzp-tab.active {{
-        background: #333;
-        color: #fff;
+        background: #FF804F;
+        color: #062151;
         font-weight: 700;
       }}
       .rzp-button {{
         appearance: none;
-        border: 1px solid #5f5f5f;
+        border: 1px solid #FF804F;
         background: #fff;
-        color: #333;
-        border-radius: 999px;
-        padding: 11px 26px;
-        font-size: 1rem;
+        color: #062151;
+        border-radius: 11px;
+        padding: 11px 16px;
+        font-size: .78rem;
         font-weight: 600;
         cursor: pointer;
+        transition: background 180ms ease, transform 180ms ease;
       }}
+      .rzp-button:hover {{ background: #FF804F; transform: translateY(-2px); }}
       .rzp-filter-panel {{
         display: none;
         max-width: 1400px;
         margin: 0 auto 14px;
         padding: 14px 18px;
         background: #fff;
-        border: 1px solid #e5ebf1;
+        border: 1px solid #dfe5ef;
         border-radius: 16px;
-        box-shadow: 0 4px 18px rgba(15, 23, 42, 0.05);
+        box-shadow: 0 8px 24px rgba(6,33,81,.05);
       }}
       .rzp-filter-panel.show {{
         display: block;
@@ -2824,7 +3112,7 @@ def rzp():
         margin: 0 0 12px;
         font-size: 1rem;
         font-weight: 700;
-        color: #333;
+        color: #062151;
       }}
       .rzp-filter-list {{
         display: flex;
@@ -2832,7 +3120,7 @@ def rzp():
         gap: 10px;
       }}
       .rzp-stage {{
-        padding: 0 18px 22px;
+        padding: 0 0 22px;
       }}
       .rzp-panel {{
         display: none;
@@ -2841,12 +3129,12 @@ def rzp():
         display: block;
       }}
       .rzp-table-block {{
-        margin-bottom: 16px;
+        margin-bottom: 18px;
         overflow-x: auto;
         background: #fff;
-        border-radius: 12px;
-        border: 1px solid #c8c8c8;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+        border-radius: 16px;
+        border: 1px solid #dfe5ef;
+        box-shadow: 0 8px 24px rgba(6,33,81,.05);
       }}
       .rzp-table {{
         width: 100%;
@@ -2856,22 +3144,23 @@ def rzp():
       }}
       .rzp-table th,
       .rzp-table td {{
-        border: 1px solid #9f9f9f;
+        border: 1px solid #dfe5ef;
         padding: 7px 8px;
         vertical-align: middle;
         background: #fff;
-        font-size: 0.95rem;
+        color: #062151;
+        font-size: 0.86rem;
       }}
       .rzp-table thead th {{
         text-align: center;
       }}
       .rzp-corner {{
         width: 230px;
-        background: #fff;
+        background: #FEFAF5;
       }}
       .rzp-section-row th {{
-        background: #62c7f2;
-        color: #00324f;
+        background: #0D2E6A;
+        color: #FEFAF5;
         text-align: left !important;
         font-size: 1rem;
         font-weight: 700;
@@ -2917,13 +3206,13 @@ def rzp():
         line-height: 1.15;
       }}
       .rzp-table tbody td.rzp-editable {{
-        background: #fff8d6;
-        outline: 2px solid #f0b400;
+        background: #fff0ea;
+        outline: 2px solid #FF804F;
         cursor: text;
       }}
       .rzp-empty-row {{
         text-align: center !important;
-        color: #666;
+        color: #53647f;
         padding: 14px 10px;
         font-style: italic;
       }}
@@ -2931,9 +3220,9 @@ def rzp():
         max-width: 1400px;
         margin: 0 auto 14px;
         padding: 10px 14px;
-        border-left: 4px solid #18a5ff;
-        background: #edf8fe;
-        color: #114a66;
+        border-left: 4px solid #FF804F;
+        background: #fff0ea;
+        color: #062151;
         border-radius: 10px;
       }}
       .rzp-empty {{
@@ -2941,15 +3230,15 @@ def rzp():
         margin: 0 auto;
         padding: 18px;
         background: #fff;
-        border: 1px dashed #d6dde5;
+        border: 1px dashed #b9c9dd;
         border-radius: 18px;
-        color: #5b6774;
+        color: #53647f;
       }}
       .rzp-closure-banner {{
         max-width: 1400px;
         margin: 0 auto 10px;
-        background: #62c7f2;
-        color: #00324f;
+        background: #FF804F;
+        color: #062151;
         padding: 6px 10px;
         font-weight: 700;
         border-radius: 8px;
@@ -3196,7 +3485,7 @@ def hypo_calc():
           increase_pct,
           constant_insurance
         )
-        optimized = optimize_insurance_initial(schedule, insurance_years)
+        optimized = optimize_insurance_initial(schedule, insurance_years, constant_insurance)
         total_interest = sum(r['interest'] for r in schedule)
         total_paid = sum(r['payment'] for r in schedule)
 
@@ -3476,18 +3765,53 @@ def investicie():
 # ============================================================================
 def izp():
     content = """
-    <h2>Investičné životné poistenie</h2>
+    <style>
+      .izp-page{color:#062151;}
+      .izp-hero{padding:26px 30px 28px;border-radius:22px;background:linear-gradient(110deg,#062151 0%,#0D2E6A 100%);color:#FEFAF5;box-shadow:0 14px 36px rgba(6,33,81,.14);}
+      .izp-hero p{margin:0 0 8px;color:#ffb49d;font-size:.7rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;}
+      .izp-hero h2{margin:0;font-size:2rem;letter-spacing:-.04em;}
+      .izp-hero small{display:block;margin-top:10px;color:#dfeaf6;font-size:.85rem;}
+      .izp-workspace{display:grid!important;grid-template-columns:minmax(300px,380px) minmax(0,1fr)!important;gap:22px!important;align-items:start!important;margin-top:22px;}
+      .izp-workspace>.card,.izp-summary-card,.izp-note-card{border:1px solid #dfe5ef!important;border-radius:22px!important;background:#fff!important;box-shadow:0 14px 40px rgba(6,33,81,.08)!important;}
+      .izp-workspace>.card{padding:24px!important;}
+      .izp-page h4{color:#062151;font-size:1.05rem;letter-spacing:-.02em;}
+      .izp-page label{display:block;margin-bottom:6px;color:#53647f;font-size:.72rem;font-weight:650;}
+      .izp-page input{min-height:43px;border:1px solid #dfe5ef;border-radius:11px;background:#fff;color:#062151;}
+      .izp-page input:focus{border-color:#FF804F;box-shadow:0 0 0 3px rgba(255,128,79,.16);}
+      .izp-page .btn{width:100%;margin-top:12px!important;background:#FF804F;color:#062151;font-weight:700;}
+      .izp-page .btn:hover{background:#e9683b;}
+      #izp_results{min-width:0;}
+      #izp_results .izp-chart-card{padding:24px!important;margin-bottom:14px!important;}
+      #izp_results .izp-chart-card h4{margin:0 0 12px!important;}
+      #izp_results .izp-chart-wrap{max-width:none!important;width:100%;height:360px!important;}
+      #izp_summary{gap:14px!important;}
+      .izp-summary-card,.izp-note-card{padding:24px!important;}
+      #izp_summary .izp-summary-card>div>div>div{border:1px solid #dfe5ef!important;border-radius:14px!important;background:#edf3fa!important;padding:16px!important;}
+      #izp_summary .izp-summary-card>div>div>div:first-child{background:#FF804F!important;color:#062151;}
+      #izp_summary .izp-summary-card>div>div>div>div:first-child{color:#53647f!important;font-size:.75rem!important;}
+      #izp_summary .izp-summary-card>div>div>div:first-child>div:first-child{color:#062151!important;}
+      #izp_summary [id^="sum_"]{color:#062151!important;}
+      #izp_summary .izp-summary-card>div>div:last-child>div{background:#FEFAF5!important;border:1px solid #dfe5ef!important;border-radius:11px!important;padding:10px 12px!important;}
+      #izp_summary .izp-summary-card>div>div:last-child>div:nth-child(3){background:#fff0ea!important;}
+      #izp_summary .izp-summary-card>div>div:last-child>div:nth-child(4),#izp_summary .izp-summary-card>div>div:last-child>div:nth-child(5){background:#e8f0f8!important;}
+      .izp-note-card{color:#53647f;line-height:1.55;}
+      #izp_alerts>div{border-radius:11px!important;margin-top:12px;}
+      @media(max-width:900px){.izp-workspace{grid-template-columns:1fr!important;}#izp_results{grid-row:1;}.izp-workspace>.card{padding:20px!important;}}
+      @media(max-width:620px){.izp-hero{padding:22px;border-radius:18px;}.izp-hero h2{font-size:1.65rem;}.izp-workspace{gap:14px!important;}#izp_results .izp-chart-wrap{height:260px!important;}}
+    </style>
+    <div class="izp-page">
+    <div class="izp-hero"><p>Finančný model</p><h2>Investičné životné poistenie</h2><small>Porovnajte poplatky, investovanie a očakávaný vývoj hodnoty v čase.</small></div>
 
     <div id="izp_results" style="display:none;">
-      <div class="card" style="padding:12px;margin-bottom:16px;">
+      <div class="card izp-chart-card" style="padding:12px;margin-bottom:16px;">
         <h4 style="margin:0 0 10px 0;">Investičné životné poistenie</h4>
-        <div style="max-width:1100px;margin:0 auto;height:420px;">
+        <div class="izp-chart-wrap" style="max-width:1100px;margin:0 auto;height:420px;">
           <canvas id="izp_main_chart"></canvas>
         </div>
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;">
+    <div class="izp-workspace" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;">
       <div class="card" style="padding:12px;">
         <h4 style="margin:0 0 8px 0;">Detaily zmluvy</h4>
 
@@ -3548,7 +3872,7 @@ def izp():
       </div>
 
       <div id="izp_summary" style="display:none;gap:12px;">
-        <div class="card" style="padding:12px;">
+        <div class="card izp-summary-card" style="padding:12px;">
           <h4 style="margin:0 0 8px 0;">Výpočet</h4>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div style="border:1px solid #c9c9c9;border-radius:10px;padding:10px;text-align:center;">
@@ -3570,7 +3894,7 @@ def izp():
           </div>
         </div>
 
-        <div class="card" style="padding:12px;">
+        <div class="card izp-note-card" style="padding:12px;">
           <h4 style="margin:0 0 8px 0;">Sporenie</h4>
           <div style="font-size:0.9rem;color:#666;">Prehľad je orientačný a určený na porovnanie poplatkov a investovania v čase. Pri výpočte nieje zohľadnený vplyv inflácie a daňové výhody.</div>
           <div id="izp_alerts" style="margin-top:8px;"></div>
@@ -3578,6 +3902,7 @@ def izp():
       </div>
     </div>
 
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
       let izpChart = null;
@@ -3629,8 +3954,8 @@ def izp():
               {
                 label:'Celkovo poistné',
                 data:data.gross_series,
-                borderColor:'#15a8ff',
-                backgroundColor:'rgba(21,168,255,0.10)',
+                borderColor:'#0D2E6A',
+                backgroundColor:'rgba(13,46,106,0.10)',
                 fill:true,
                 pointRadius:0,
                 tension:0.25
@@ -3638,8 +3963,8 @@ def izp():
               {
                 label:'Nasporené vo fondoch',
                 data:data.fund_series,
-                borderColor:'#3d5afe',
-                backgroundColor:'rgba(61,90,254,0.08)',
+                borderColor:'#FF804F',
+                backgroundColor:'rgba(255,128,79,0.08)',
                 fill:true,
                 pointRadius:0,
                 tension:0.25
@@ -3647,7 +3972,7 @@ def izp():
               {
                 label:'Investované prostriedky',
                 data:data.invested_series,
-                borderColor:'#444',
+                borderColor:'#062151',
                 fill:false,
                 pointRadius:0,
                 tension:0.20
@@ -3655,8 +3980,8 @@ def izp():
               {
                 label:'Investičné sporenie',
                 data:data.investment_series,
-                borderColor:'#52c41a',
-                backgroundColor:'rgba(82,196,26,0.08)',
+                borderColor:'#8aa8c8',
+                backgroundColor:'rgba(138,168,200,0.10)',
                 fill:true,
                 pointRadius:0,
                 tension:0.25

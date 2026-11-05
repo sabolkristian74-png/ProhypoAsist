@@ -24,6 +24,7 @@ class CalcInput(BaseModel):
     insurance_sum: float = Field(..., ge=0)
     insurance_years: int = Field(..., ge=0)
     increase_pct: float = Field(0.0, ge=0)
+    constant_insurance: float = Field(0.0, ge=0)
 
     @validator("first_payment")
     def valid_date(cls, v):
@@ -53,11 +54,16 @@ async def calculate(payload: CalcInput):
         payload.insurance_sum,
         payload.insurance_years,
         payload.increase_pct,
+        payload.constant_insurance,
     )
 
     optimized = None
     try:
-        optimized = optimize_insurance_initial(schedule, payload.insurance_years)
+        optimized = optimize_insurance_initial(
+            schedule,
+            payload.insurance_years,
+            payload.constant_insurance,
+        )
     except Exception:
         optimized = None
 
